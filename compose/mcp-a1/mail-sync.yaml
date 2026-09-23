@@ -1,0 +1,29 @@
+services:
+  protonmail-bridge:
+    image: ghcr.io/belphemur/protonmail-bridge:latest
+    container_name: proton-bridge
+    restart: unless-stopped
+    environment:
+      - PUID=1001
+      - PGID=1001
+    volumes:
+      - ./data/bridge:/config
+    ports:
+      - "127.0.0.1:1143:1143"
+      - "127.0.0.1:1025:1025"
+
+  mbsync-runner:
+    build: ./mbsync
+    container_name: mbsync-runner
+    restart: unless-stopped
+    network_mode: "service:protonmail-bridge"
+    depends_on:
+      - protonmail-bridge
+    volumes:
+      - ./mbsync/mbsyncrc:/root/.mbsyncrc:ro
+      - ./mbsync/bridge-cert.pem:/root/bridge-cert.pem:ro
+      - ./mbsync/outlook_refresh_token:/root/outlook_refresh_token
+      - ./mbsync/idle-configs:/root/idle-configs:ro
+      - ./data/mbsync-state:/root/.mbsync
+    env_file:
+      - .env

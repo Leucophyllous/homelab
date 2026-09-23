@@ -1,0 +1,22 @@
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: '*'
+      PUID: '1000'
+      PGID: '1000'
+      NODE_TLS_REJECT_UNAUTHORIZED: '0'
+      HOMEPAGE_VAR_N8N_API_KEY: ${N8N_API_KEY}
+    ports:
+    - 3000:3000
+    volumes:
+    - ./config:/app/config
+    - ./images:/app/public/images
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    extra_hosts:
+    - pterodactyl.seikatsusmp.f5.si:192.168.0.47
+    restart: unless-stopped
+    group_add:
+    - '991'
+networks: {}

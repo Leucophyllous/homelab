@@ -1,0 +1,19 @@
+services:
+  mcp:
+    build: .
+    container_name: mcp-server
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - /root/.ssh/mcp_pi:/app/keys/mcp_pi:ro
+      - /root/.ssh/mcp_pve:/app/keys/mcp_pve:ro
+      - /root/.ssh/oci_mcp:/app/keys/oci_mcp:ro
+      - /root/.ssh/known_hosts_mcp:/app/keys/known_hosts:ro
+      - /root/.oci:/root/.oci:ro
+      - /opt/stacks/mcp/tokens.json:/app/tokens.json
+      - /opt/stacks/mcp/proton-cal-config:/root/.config/proton-cal
+      - /etc/letsencrypt/live/mcp.leila.li/fullchain.pem:/app/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/mcp.leila.li/privkey.pem:/app/certs/privkey.pem:ro
+networks: {}
