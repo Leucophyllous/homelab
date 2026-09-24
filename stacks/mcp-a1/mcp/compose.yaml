@@ -14,6 +14,7 @@ services:
       - /root/.oci:/root/.oci:ro
       - /opt/stacks/mcp/tokens.json:/app/tokens.json
       - /opt/stacks/mcp/proton-cal-config:/root/.config/proton-cal
+      - /opt/stacks/mcp/secrets/github_token:/app/secrets/github_token:ro
       - /etc/letsencrypt/live/${MCP_DOMAIN}/fullchain.pem:/app/certs/fullchain.pem:ro
       - /etc/letsencrypt/live/${MCP_DOMAIN}/privkey.pem:/app/certs/privkey.pem:ro
 networks: {}
