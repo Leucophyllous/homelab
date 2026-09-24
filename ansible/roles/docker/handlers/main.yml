@@ -1,0 +1,6 @@
+- name: apply acl
+  ansible.builtin.systemd_service:
+    name: docker-api-acl.service
+    daemon_reload: true
+    enabled: true
+    state: restarted

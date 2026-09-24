@@ -6,7 +6,7 @@ services:
     env_file:
       - ./.env
     ports:
-      - "192.168.0.245:3306:3306"
+      - "${DB_BIND_IP}:3306:3306"
     volumes:
       - ./data:/var/lib/mysql
     environment:
@@ -20,7 +20,5 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-    labels:
-      wud.watch: "true"
 
 networks: {}

@@ -1,0 +1,11 @@
+#!/bin/sh
+iptables -N DOCKER-API-ACL 2>/dev/null || iptables -F DOCKER-API-ACL
+{% for s in acl_allow %}
+iptables -A DOCKER-API-ACL -s {{ s }} -j RETURN
+{% endfor %}
+iptables -A DOCKER-API-ACL -j DROP
+iptables -N DOCKER-USER 2>/dev/null
+iptables -C DOCKER-USER -p tcp -m conntrack --ctorigdstport 2375 --ctdir ORIGINAL -j DOCKER-API-ACL 2>/dev/null || iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 2375 --ctdir ORIGINAL -j DOCKER-API-ACL
+iptables -C INPUT -p tcp --dport 2375 -j DOCKER-API-ACL 2>/dev/null || iptables -I INPUT -p tcp --dport 2375 -j DOCKER-API-ACL
+ip6tables -C INPUT -p tcp --dport 2375 -j DROP 2>/dev/null || ip6tables -I INPUT -p tcp --dport 2375 -j DROP
+exit 0

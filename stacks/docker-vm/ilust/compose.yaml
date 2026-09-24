@@ -1,0 +1,31 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  ilust-gallery:
+    image: node:22-slim
+    container_name: ilust-gallery
+    restart: unless-stopped
+    working_dir: /opt/ilust
+    command: ["node", "server.js"]
+    environment:
+      TZ: Asia/Tokyo
+      NODE_ENV: production
+      PORT: "8000"
+      IMAGES_DIR: /opt/ilust/images
+    volumes:
+      - ./data:/opt/ilust
+    ports:
+      - "8000:8000"
+    logging: *logging
+  ilust-x-likes:
+    build: .
+    image: local/ilust-x-likes:1
+    container_name: ilust-x-likes
+    restart: unless-stopped
+    volumes:
+      - ./data:/opt/ilust
+    logging: *logging

@@ -1,75 +1,193 @@
 # 鯖 (Homelab)
 
-自宅で運用している Proxmox ベースのホームラボ構成。物理ホスト2台 + VM/LXC群 +
-リモートの OCI インスタンス1台で、セルフホストサービス・ゲームサーバー・自動化基盤を構築している。
+自宅で運用している Proxmox ベースのホームラボの構成と運用のまとめ。
+物理ホスト2台の Proxmox クラスタ + Raspberry Pi + OrangePi + リモートの OCI インスタンス1台で、
+セルフホストサービス・ゲームサーバー・監視と自動化の基盤を動かしている。
 
-このリポジトリには各サービスの `compose.yaml` を(機密情報を `${VAR}` 参照に置き換えた上で)収録している。
-実際の値は `.env` に入れて `.gitignore` で除外する運用。**このリポジトリ自体に秘密情報を含めない。**
+このリポジトリには、各サービスの `compose.yaml`・自前イメージの `Dockerfile`・構成管理の Ansible を収録している。
+秘密情報や内部アドレスは `${VAR}` 参照に置き換えており、**リポジトリ自体には含めない**。
 
-## ホスト一覧
+## 構成図
 
-| ホスト | 役割 | スペック |
+```mermaid
+flowchart LR
+  user["利用者"] -->|HTTPS| cf["Cloudflare<br>DNS / Access"]
+  user -->|Java / Bedrock| mc
+  claude["Claude"] -->|MCP| mcp
+
+  subgraph home["自宅LAN"]
+    subgraph pi["Raspberry Pi"]
+      npm["Nginx Proxy Manager"]
+      qd["QDevice"]
+    end
+    subgraph cluster["Proxmox VE クラスタ (HA)"]
+      subgraph pve["pve"]
+        dpve["VM docker-pve<br>n8n / Forgejo<br>Prometheus / Grafana"]
+        mc["CT minecraft<br>Paper + Geyser"]
+      end
+      subgraph pve02["pve02"]
+        dvm["VM docker-vm<br>Home Assistant / Homepage<br>bots / manmaru / ilust"]
+        db["VM DB-vm<br>MariaDB"]
+      end
+    end
+    subgraph opi["OrangePi 5 Plus"]
+      nas["NAS (SMB)"]
+      bs["backup-storage (NFS)"]
+      nut["NUT (UPS)"]
+      sb["Minecraft 代理"]
+    end
+  end
+
+  subgraph oci["OCI A1"]
+    mcp["MCP サーバー"]
+    mail["Proton Bridge + mbsync"]
+    oll["Ollama"]
+  end
+
+  subgraph saas["外部サービス"]
+    tg["Telegram"]
+    hc["healthchecks.io"]
+    gem["Gemini API"]
+    gd["Google Drive"]
+  end
+
+  cf --> npm
+  npm --> dpve
+  npm --> dvm
+  qd -.-> cluster
+  pve <-.->|ZFS レプリケーション| pve02
+  cluster -->|vzdump| bs
+  mc -.->|毎時同期| sb
+  dpve -->|通知| tg
+  dpve -->|AI 診断| gem
+  dpve -.->|予備| oll
+  dpve -->|heartbeat| hc
+  cluster -.->|アーカイブ| gd
+  mcp -.->|Tailscale| cluster
+```
+
+編集できる版は [`docs/architecture.drawio`](docs/architecture.drawio)(draw.io / diagrams.net で開く)。
+
+## 設計方針
+
+- **しばらく触れなくても動き続ける**: セキュリティ更新は自動、壊れたら自動で再起動・通知、止まったことに外から気づける。
+- **作り直せる**: 設定は Ansible、サービスは compose / Dockerfile にしておき、データはバックアップから戻す。
+- **サービスは Docker に統一**: VM 上の `/opt/stacks/<スタック>/` に compose 単位で置く。LXC はマイクラと VPN 検証だけ。
+- **冗長化は安く**: 共有ストレージは使わず、ZFS レプリケーション + Proxmox HA で片方のホストが落ちても再開する。
+
+## ホスト
+
+| ホスト | 役割 |
+|---|---|
+| pve | Proxmox ノード(デスクトップ機) |
+| pve02 | Proxmox ノード(ノートPC) |
+| Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice |
+| OrangePi 5 Plus | NAS、バックアップ置き場、UPS の NUT サーバー、Minecraft の代理サーバー |
+| mcp-a1 (OCI A1) | MCP サーバー、メール集約、Ollama |
+
+## ゲスト
+
+| 種類 | 名前 | 通常のホスト | HA | 役割 |
+|---|---|---|---|---|
+| VM | docker-pve | pve | ○ | n8n、Forgejo、Prometheus、Grafana、nut-exporter |
+| VM | docker-vm | pve02 | ○ | Home Assistant、Matter、Homepage、bot 類、manmaru、ilust、Forgejo runner |
+| VM | DB-vm | pve02 | ○ | MariaDB |
+| CT | minecraft | pve | - | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ) |
+| CT | vpn-lab | pve | - | VPN 検証 |
+
+## スタック一覧
+
+`stacks/<ホスト>/<スタック>/` がサーバーの `/opt/stacks/<スタック>/` に対応する。
+
+| ホスト | スタック | 内容 |
 |---|---|---|
-| pve | Proxmoxメインホスト、LXC群 | 6コア / 24GB RAM |
-| pve02 | Proxmoxセカンドホスト、VM群 | 8コア / 16GB RAM |
-| OrangePi | NAS・DNS・SMB共有 | ARM SBC |
-| mcp-a1 (OCI) | MCPサーバー、メール集約 | Tailscale経由でリモート接続 |
-| Raspberry Pi | NPM(リバースプロキシ)・docker-proxy | - |
+| docker-pve | monitoring | nut-exporter、Prometheus、Grafana(内部ネットワークでサービス名で接続) |
+| docker-pve | forgejo | Forgejo(rootless イメージ) |
+| docker-pve | n8n | n8n |
+| docker-vm | discord-bots | everyone-bot、wol-bot(host network)、rolepanel-bot(共通の自前イメージ) |
+| docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作をする bot |
+| docker-vm | manmaru | 告知 bot + Web 管理パネル(FastAPI) |
+| docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
+| docker-vm | homeassistant / homepage / forgejo-runner | - |
+| db-vm | mariadb | Forgejo と監視ログの DB |
+| mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama |
+| pi | npm | Nginx Proxy Manager |
+| 各 Docker ホスト | docker-proxy | 更新チェック用の Docker API(送信元を ACL で限定) |
 
-## pve 上の LXC
+## 冗長化
 
-| CTID | 名前 | 役割 |
+- **HA**: VM 3台は ZFS(`hapool`)上にあり、相手ノードへ2分毎にレプリケーション。ノードが落ちると生き残った側で自動再開する(実測でおよそ5〜8分)。
+- **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つ。
+- **停電**: UPS を OrangePi の NUT が監視し、バッテリー低下で pve・pve02 を先に停止する。
+- **Minecraft**: HA の対象外。OrangePi に毎時同期した代理サーバーを、Telegram のコマンドで手動で切り替える。
+- **AI 診断**: Gemini が主、OCI A1 の Ollama が予備。両方ダメでも通知自体は届く。
+
+## バックアップ
+
+| 時刻 | 内容 | 保存先 |
 |---|---|---|
-| 121 | minecraft-ct | PaperMC + Geyser/Floodgate(クロスプレイ対応マイクラ鯖) |
-| 126 | vpn-lab | VPN検証環境 |
-| 130 | discord-bots | Discord/Telegram bot群(everyone-bot, wol-bot, rolepanel-bot, telegram-cmd-bot) |
-| 135 | manmaru | 告知Bot + Web管理パネル |
-| 136 | ilust | イラスト関連サービス |
-| 137 | nut-exporter | UPS監視(Prometheus exporter) |
-| 138 | prometheus | メトリクス収集 |
-| 139 | grafana | 可視化ダッシュボード |
-| 141 | forgejo | 自前Gitサーバー |
-| 142 | n8n | ワークフロー自動化(監視・自動修復・通知) |
-| 146 | ollama | ローカルLLM推論 |
+| 01:45 | MariaDB の論理ダンプ | backup-storage |
+| 02:00 | Minecraft のワールドバックアップのミラー | backup-storage |
+| 03:00 | 各ホストの設定(etckeeper・スクリプト・Ansible・スタック) | backup-storage |
+| 03:30 | NAS 共有のミラー | backup-storage |
+| 04:00 | 全ゲストの vzdump(keep-daily=3、keep-weekly=2) | backup-storage |
+| 05:30 | Minecraft ワールド(30日分) | pve ローカル → ミラー |
+| 毎時 | Minecraft の代理サーバーへの同期 | OrangePi |
 
-## pve02 上の VM
+- 各ジョブは healthchecks.io に開始・成功・失敗を送る。**失敗したときも、そもそも動かなかったときも**外から検知できる。
+- 廃止したゲストは最終ダンプをパスワード付き 7z(AES-256・ファイル名も暗号化)にして Google Drive に保管する。
 
-| VMID | 名前 | 役割 |
-|---|---|---|
-| 110 | DB-vm | MariaDB |
-| 112 | docker-vm | Homepage, Home Assistant, Forgejo Runner, docker-proxy |
+## 監視と自動化
 
-## mcp-a1 (OCI, リモート)
+- **Status Monitor(n8n)**: 1分毎に HTTP/TCP で各サービスを確認し、変化したときだけ Telegram に通知(AI 診断付き)。公開 URL は3回連続の失敗で通知し、外部経路だけの一斉障害は1通にまとめる。`/maintenance 30m` で作業中の通知を止められる。
+- **Kuma Fix(n8n)**: 通知の「修正」ボタンから、監視ごとに決めた固定の復旧コマンド(`docker restart` など)を実行して再確認する。
+- **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎)、アプリと OS パッケージ(Native Update Check、毎日)、OCI 側のイメージ(毎週)。反映はボタンか手動。
+- **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
+- **構成のずれ検知**: 毎週 Ansible を試走し、ずれや到達できないホストがあれば通知する。
+- **n8n 自体の死活**: 5分毎に healthchecks.io へ heartbeat を送る。n8n が止まっても外から分かる。
 
-Tailscale経由で接続するMCPサーバー。Claude (Anthropic) がこのホームラボを操作するための
-SSH/Proxmox API/OCI API/Proton Calendar ツールを提供する ([mcp](https://github.com/Leucophyllous/mcp) リポジトリ参照)。
-同居でProtonMail Bridgeベースのメール集約スタックも稼働。
+## 構成管理(Ansible)
 
-## ストレージ構成
+```sh
+cd ansible
+cp inventory.example.yml inventory.yml
+ansible-playbook site.yml --check --diff
+ansible-playbook site.yml
+ansible-playbook fetch-stacks.yml
+```
 
-- pve: LVM-thin(`pve/data`)+ ローカルext4ディスク(`nfs-share`、名前はNFS由来だが実体はローカル)
-- バックアップ: OrangePi上のNFS共有(`backup-storage`)へvzdumpで毎日転送
-- pve02: LVM-thin、discard/trim対応済み
+| ロール | 内容 |
+|---|---|
+| common | タイムゾーン、ロケール、セキュリティ更新の自動適用、SSH の硬化 |
+| lxc | wait-online のマスク、SSH は常駐型に統一 |
+| docker | `daemon.json`(ログの上限・MTU)、Docker API の ACL |
 
-## 監視・自動化
+新しいサーバーは、インベントリに追加して `site.yml` を流せば共通の設定が入る。作り直すときは `stacks/` からスタックを置き、データをバックアップから戻す。
 
-- **Prometheus + Grafana**: メトリクス収集・可視化
-- **n8n**: サービス死活監視(Status Monitor)、UPS異常検知、Telegram通知、アプリのバージョン更新チェック(Native Update Check)
+## セキュリティ
 
-## 定期メンテナンス
+- 外部に公開しているのは HTTPS(Cloudflare 経由)と Minecraft の2ポートだけ。SSH は外部非公開。
+- 管理画面は Cloudflare Access で保護。
+- SSH はパスワード認証を無効化(一部のホストは運用上の理由で除外)。
+- Docker API は送信元を ACL で限定し、IPv6 側は遮断。
+- 秘密情報は各スタックの `.env`(600)にだけ置く。
 
-- vzdump: 毎日04:00、`keep-daily=3,keep-weekly=2`
-- LXCのfstrim: 毎週日曜05:45(`pct-fstrim.timer`)
-- マイクラワールドバックアップ: 毎日05:30、30日ロールオーバー、OrangePiへミラー
+## リポジトリ構成
 
-## 関連リポジトリ
-
-- [mcp](https://github.com/Leucophyllous/mcp) - Claude用MCPサーバー(SSH/Proxmox/OCI/Proton Calendar)
-- [manmaru](https://github.com/Leucophyllous/manmaru) - 告知Bot
-- [quakebot](https://github.com/Leucophyllous/quakebot) / [everyone-bot](https://github.com/Leucophyllous/everyone-bot) / [rolepanel](https://github.com/Leucophyllous/rolepanel) - Discord Bot群
-- [ilust](https://github.com/Leucophyllous/ilust) / [media](https://github.com/Leucophyllous/media)
+```
+stacks/<ホスト>/<スタック>/   compose.yaml、Dockerfile、requirements.txt
+ansible/                      ロール、site.yml、インベントリの見本
+docs/architecture.drawio      構成図(draw.io)
+.env.example                  compose が参照する変数の一覧
+```
 
 ## 使い方
 
-各 `compose/<host>/*.yaml` はそのまま `docker compose up -d` できる形だが、
-`${VAR}` の実値は自分の `.env` を用意すること(`.env.example` を参照)。値そのものはこのリポジトリに含まれない。
+各スタックはそのまま `docker compose up -d` できる形だが、`${VAR}` の実値と各スタックの `.env` は自分で用意すること(`.env.example` を参照)。
+
+## 関連リポジトリ
+
+- [mcp](https://github.com/Leucophyllous/mcp) - Claude 用 MCP サーバー(SSH / Proxmox / OCI / Proton Calendar)
+- [manmaru](https://github.com/Leucophyllous/manmaru) - 告知 bot
+- [quakebot](https://github.com/Leucophyllous/quakebot) / [everyone-bot](https://github.com/Leucophyllous/everyone-bot) / [rolepanel](https://github.com/Leucophyllous/rolepanel) - Discord bot 群
+- [ilust](https://github.com/Leucophyllous/ilust) / [media](https://github.com/Leucophyllous/media)

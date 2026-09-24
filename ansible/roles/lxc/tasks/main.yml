@@ -1,0 +1,16 @@
+- name: wait-online masked
+  ansible.builtin.systemd_service:
+    name: systemd-networkd-wait-online.service
+    masked: true
+
+- name: ssh socket activation off
+  ansible.builtin.systemd_service:
+    name: ssh.socket
+    enabled: false
+    state: stopped
+
+- name: ssh service on
+  ansible.builtin.systemd_service:
+    name: ssh.service
+    enabled: true
+    state: started

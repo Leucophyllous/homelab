@@ -1,0 +1,16 @@
+services:
+  manmaru:
+    build: .
+    image: local/manmaru:1
+    container_name: manmaru
+    restart: unless-stopped
+    env_file: src/.env
+    volumes:
+      - ./src:/opt/manmaru
+    ports:
+      - "8090:8090"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

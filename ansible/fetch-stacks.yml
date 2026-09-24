@@ -1,0 +1,19 @@
+- name: stack blueprints
+  hosts: docker_hosts
+  tasks:
+    - name: find stack files
+      ansible.builtin.find:
+        paths: /opt/stacks
+        patterns: [compose.yaml, compose.yml, docker-compose.yml, docker-compose.yaml, Dockerfile, requirements.txt]
+        recurse: true
+        depth: 2
+      register: sf
+
+    - name: fetch stack files
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "stacks/{{ inventory_hostname }}/{{ item.path | regex_replace('^/opt/stacks/', '') }}"
+        flat: true
+      loop: "{{ sf.files }}"
+      loop_control:
+        label: "{{ item.path }}"

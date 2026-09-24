@@ -1,0 +1,17 @@
+services:
+  telegram-cmd-bot:
+    build: .
+    image: local/telegram-cmd-bot:1
+    container_name: telegram-cmd-bot
+    restart: unless-stopped
+    env_file: app/.env
+    volumes:
+      - ./app:/opt/telegram-cmd-bot
+      - ./state:/var/lib/telegram-cmd-bot
+    ports:
+      - "8099:8099"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

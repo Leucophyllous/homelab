@@ -1,0 +1,2 @@
+- name: reload sshd
+  ansible.builtin.shell: sshd -t && systemctl try-reload-or-restart ssh

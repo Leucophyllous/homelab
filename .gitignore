@@ -1,8 +1,4 @@
 .env
-*.env
-!.env.example
-*.pem
-*.key
-id_*
-!*.pub
-tokens.json
+**/.env
+ansible/inventory.yml
+*.retry

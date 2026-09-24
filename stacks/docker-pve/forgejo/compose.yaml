@@ -1,0 +1,17 @@
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:15.0.9-rootless
+    container_name: forgejo
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      TZ: Asia/Tokyo
+      HOME: /var/lib/forgejo
+      GITEA_WORK_DIR: /var/lib/forgejo/gitea
+      GITEA_CUSTOM: /var/lib/forgejo/gitea/custom
+      GITEA_APP_INI: /var/lib/forgejo/gitea/conf/app.ini
+    volumes:
+      - ./data:/var/lib/forgejo
+    ports:
+      - "3001:3000"
+      - "2222:2222"

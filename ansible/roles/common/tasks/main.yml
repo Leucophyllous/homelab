@@ -1,0 +1,60 @@
+- name: current timezone
+  ansible.builtin.command: readlink -f /etc/localtime
+  register: tzcur
+  changed_when: false
+  check_mode: false
+
+- name: timezone
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ tz }}"
+    dest: /etc/localtime
+    state: link
+    force: true
+  when: tzcur.stdout != "/usr/share/zoneinfo/" ~ tz
+
+- name: base packages
+  ansible.builtin.apt:
+    name: [unattended-upgrades, locales, curl]
+    state: present
+
+- name: en_US.UTF-8 enabled
+  ansible.builtin.lineinfile:
+    path: /etc/locale.gen
+    regexp: '^#? *en_US\.UTF-8 UTF-8'
+    line: en_US.UTF-8 UTF-8
+  register: localegen
+
+- name: locales generated
+  ansible.builtin.command: locale-gen
+  when: localegen.changed
+
+- name: automatic upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+- name: security origins
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/51unattended-upgrades-security
+    content: |
+      Unattended-Upgrade::Origins-Pattern {
+              "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+              "origin=Debian,codename=${distro_codename},label=Debian-Security";
+      };
+      Unattended-Upgrade::Automatic-Reboot "false";
+    mode: "0644"
+  when: ansible_distribution == "Debian"
+
+- name: sshd hardening
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin {{ ssh_permit_root_login | default('prohibit-password') }}
+    mode: "0644"
+  when: ssh_hardening | default(true)
+  notify: reload sshd

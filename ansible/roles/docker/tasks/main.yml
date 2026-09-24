@@ -1,0 +1,33 @@
+- name: daemon.json
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ (({'mtu': docker_mtu}) if docker_mtu is defined else {}) | combine({'log-driver': 'json-file', 'log-opts': {'max-size': '10m', 'max-file': '3'}}) | to_json }}"
+    mode: "0644"
+
+- name: docker api acl script
+  ansible.builtin.template:
+    src: docker-api-acl.sh.j2
+    dest: /usr/local/sbin/docker-api-acl.sh
+    mode: "0755"
+  when: docker_api_acl | default(true)
+  notify: apply acl
+
+- name: docker api acl unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker-api-acl.service
+    content: |
+      [Unit]
+      Description=Restrict Docker API port 2375 to n8n and telegram bot
+      After=docker.service
+      PartOf=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/docker-api-acl.sh
+
+      [Install]
+      WantedBy=docker.service
+    mode: "0644"
+  when: docker_api_acl | default(true)
+  notify: apply acl

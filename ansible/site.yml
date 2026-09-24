@@ -1,0 +1,11 @@
+- name: common
+  hosts: all
+  roles: [common]
+
+- name: lxc
+  hosts: lxc
+  roles: [lxc]
+
+- name: docker
+  hosts: docker_hosts
+  roles: [docker]
