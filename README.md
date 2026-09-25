@@ -59,6 +59,7 @@ flowchart LR
   cluster -->|vzdump| bs
   mc -.->|毎時同期| sb
   dpve -->|通知| tg
+  cluster -->|Proxmox 通知| tg
   dpve -->|AI 診断| gem
   dpve -.->|予備| oll
   dpve -->|heartbeat| hc
@@ -89,8 +90,8 @@ flowchart LR
 
 | 種類 | 名前 | 通常のホスト | HA | 役割 |
 |---|---|---|---|---|
-| VM | docker-pve | pve | ○ | n8n、Forgejo、Prometheus、Grafana、nut-exporter |
-| VM | docker-vm | pve02 | ○ | Home Assistant、Matter、Homepage、bot 類、manmaru、ilust、Forgejo runner |
+| VM | docker-pve | pve | ○ | n8n、Forgejo(GitHub のミラー)、Prometheus、Grafana、nut-exporter |
+| VM | docker-vm | pve02 | ○ | Home Assistant、Matter、Homepage、bot 類、manmaru、ilust |
 | VM | DB-vm | pve02 | ○ | MariaDB |
 | CT | minecraft | pve | - | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ) |
 | CT | vpn-lab | pve | - | VPN 検証 |
@@ -102,13 +103,13 @@ flowchart LR
 | ホスト | スタック | 内容 |
 |---|---|---|
 | docker-pve | monitoring | nut-exporter、Prometheus、Grafana(内部ネットワークでサービス名で接続) |
-| docker-pve | forgejo | Forgejo(rootless イメージ) |
+| docker-pve | forgejo | Forgejo(rootless イメージ、GitHub の全リポジトリのプルミラー) |
 | docker-pve | n8n | n8n |
 | docker-vm | discord-bots | everyone-bot、wol-bot(host network)、rolepanel-bot(共通の自前イメージ) |
 | docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作をする bot |
 | docker-vm | manmaru | 告知 bot + Web 管理パネル(FastAPI) |
 | docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
-| docker-vm | homeassistant / homepage / forgejo-runner | - |
+| docker-vm | homeassistant / homepage | - |
 | db-vm | mariadb | Forgejo と監視ログの DB |
 | mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama |
 | pi | npm | Nginx Proxy Manager |
@@ -116,9 +117,9 @@ flowchart LR
 
 ## 冗長化
 
-- **HA**: VM 3台は ZFS(`hapool`)上にあり、相手ノードへ2分毎にレプリケーション。ノードが落ちると生き残った側で自動再開する(実測でおよそ5〜8分)。
+- **HA**: VM 3台は ZFS(`hapool`)上にあり、相手ノードへ2分毎にレプリケーション。ノードが落ちると生き残った側で自動再開する(実測でおよそ5〜8分)。計画的な移動はライブマイグレーションで停止 0.1 秒未満。
 - **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つ。
-- **停電**: UPS を OrangePi の NUT が監視し、バッテリー低下で pve・pve02 を先に停止する。
+- **停電**: UPS を OrangePi の NUT が監視する。バッテリー運転が続くと pve02(5分)・pve(6分)が先に停止し、残量低下で残りも停止する。
 - **Minecraft**: HA の対象外。OrangePi に毎時同期した代理サーバーを、Telegram のコマンドで手動で切り替える。
 - **AI 診断**: Gemini が主、OCI A1 の Ollama が予備。両方ダメでも通知自体は届く。
 
@@ -129,22 +130,26 @@ flowchart LR
 | 01:45 | MariaDB の論理ダンプ | backup-storage |
 | 02:00 | Minecraft のワールドバックアップのミラー | backup-storage |
 | 03:00 | 各ホストの設定(etckeeper・スクリプト・Ansible・スタック) | backup-storage |
-| 03:30 | NAS 共有のミラー | backup-storage |
-| 04:00 | 全ゲストの vzdump(keep-daily=3、keep-weekly=2) | backup-storage |
+| 03:15 | OrangePi の設定 | backup-storage |
+| 03:30 | NAS 共有のミラー(コピー元が未マウントなら中止) | backup-storage |
+| 04:00 | 全ゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2) | backup-storage |
 | 05:30 | Minecraft ワールド(30日分) | pve ローカル → ミラー |
 | 毎時 | Minecraft の代理サーバーへの同期 | OrangePi |
 
 - 各ジョブは healthchecks.io に開始・成功・失敗を送る。**失敗したときも、そもそも動かなかったときも**外から検知できる。
-- 廃止したゲストは最終ダンプをパスワード付き 7z(AES-256・ファイル名も暗号化)にして Google Drive に保管する。
+- 廃止したゲストは最終ダンプを1つだけ残し、パスワード付き 7z(AES-256・ファイル名も暗号化)にして Google Drive にも保管する。
 
 ## 監視と自動化
 
-- **Status Monitor(n8n)**: 1分毎に HTTP/TCP で各サービスを確認し、変化したときだけ Telegram に通知(AI 診断付き)。公開 URL は3回連続の失敗で通知し、外部経路だけの一斉障害は1通にまとめる。`/maintenance 30m` で作業中の通知を止められる。
+- **Status Monitor(n8n)**: 1分毎に HTTP/TCP で各サービスを確認し、変化したときだけ Telegram に通知(AI 診断付き)。Cloudflare Access の裏にある管理画面は LAN 側を直接確認する。公開 URL は3回連続の失敗で通知し、外部経路だけの一斉障害は1通にまとめる。`/maintenance 30m` で作業中の通知を止められる。
 - **Kuma Fix(n8n)**: 通知の「修正」ボタンから、監視ごとに決めた固定の復旧コマンド(`docker restart` など)を実行して再確認する。
+- **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
+- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。
+- **容量**: 毎時、全ホストのディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎)、アプリと OS パッケージ(Native Update Check、毎日)、OCI 側のイメージ(毎週)。反映はボタンか手動。
 - **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
 - **構成のずれ検知**: 毎週 Ansible を試走し、ずれや到達できないホストがあれば通知する。
-- **n8n 自体の死活**: 5分毎に healthchecks.io へ heartbeat を送る。n8n が止まっても外から分かる。
+- **死活の外部確認**: n8n・MCP サーバー・メール同期は healthchecks.io に定期的に報告する。止まったら外から分かる。
 
 ## 構成管理(Ansible)
 
@@ -167,8 +172,9 @@ ansible-playbook fetch-stacks.yml
 ## セキュリティ
 
 - 外部に公開しているのは HTTPS(Cloudflare 経由)と Minecraft の2ポートだけ。SSH は外部非公開。
-- 管理画面は Cloudflare Access で保護。
-- SSH はパスワード認証を無効化(一部のホストは運用上の理由で除外)。
+- リバースプロキシは Cloudflare からの接続だけを受け付け、オリジンへの直接アクセスは拒否する。管理画面は Cloudflare Access で保護。
+- MCP サーバーの公開ポートは、Anthropic の送信元アドレスからの接続だけに限定。
+- SSH はパスワード認証を無効化(一部のホストは運用上の理由で除外)。自動処理用の鍵は送信元とコマンドを限定する。
 - Docker API は送信元を ACL で限定し、IPv6 側は遮断。
 - 秘密情報は各スタックの `.env`(600)にだけ置く。
 
