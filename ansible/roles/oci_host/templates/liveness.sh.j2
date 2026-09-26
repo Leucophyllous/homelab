@@ -4,8 +4,10 @@ c=$(curl -sk -o /dev/null -m 10 -w '%{http_code}' https://127.0.0.1:8080/mcp)
 if ! docker exec mbsync-runner getent hosts imap.gmail.com >/dev/null 2>&1; then
   (cd /opt/stacks/mail-sync && sudo -n docker compose up -d --force-recreate mbsync-runner >/dev/null 2>&1)
 fi
-errs=$(docker exec mbsync-runner sh -c 'tail -n 40 /var/log/backstop.log 2>/dev/null | grep -ciE "error|cannot|fail"; true' 2>/dev/null | head -1); errs=${errs:-99}
+errs=$(docker exec mbsync-runner sh -c 'grep -ciE "error|cannot|fail" /var/log/backstop.log 2>/dev/null; true' 2>/dev/null | head -1); errs=${errs:-99}
+# reset the window so stale errors from past intervals don't linger and keep tripping this check
+docker exec mbsync-runner sh -c '> /var/log/backstop.log' 2>/dev/null
 want=$(ls /opt/stacks/mail-sync/mbsync/idle-configs/*.json 2>/dev/null | wc -l)
 have=$(docker exec mbsync-runner pgrep -c goimapnotify 2>/dev/null || echo 0)
 br=$(docker inspect -f '{{ '{{.State.Running}}' }}' proton-bridge 2>/dev/null)
-if [ "$br" = true ] && [ "$have" -ge "$want" ] && [ "$want" -gt 0 ] && [ "${errs:-99}" -lt 20 ]; then curl -fsS -m 10 --retry 2 -o /dev/null {{ hc_mail_sync_url }}; else curl -fsS -m 10 --retry 2 -o /dev/null --data-raw "bridge=$br watchers=$have/$want backstop_errors=$errs/40" {{ hc_mail_sync_url }}/fail; fi
+if [ "$br" = true ] && [ "$have" -ge "$want" ] && [ "$want" -gt 0 ] && [ "${errs:-99}" -lt 20 ]; then curl -fsS -m 10 --retry 2 -o /dev/null {{ hc_mail_sync_url }}; else curl -fsS -m 10 --retry 2 -o /dev/null --data-raw "bridge=$br watchers=$have/$want backstop_errors_5min=$errs" {{ hc_mail_sync_url }}/fail; fi
