@@ -1,6 +1,11 @@
 - name: common
   hosts: all
   roles: [common]
+  # pve/pve02: ssh_hardening is explicitly false in group_vars (root
+  # password login on the cluster nodes was a deliberate, informed
+  # decision — see areas/audit-20260925.md). Everything else in
+  # `common` (timezone, locale, unattended-upgrades) is additive/
+  # idempotent on top of Proxmox's own config and safe to apply.
 
 - name: lxc
   hosts: lxc
@@ -9,3 +14,15 @@
 - name: docker
   hosts: docker_hosts
   roles: [docker]
+
+- name: pve cluster (hypervisor hosts themselves)
+  hosts: pve_cluster
+  roles: [pve_host]
+
+- name: orangepi
+  hosts: orangepi
+  roles: [orangepi]
+
+- name: oci mcp-a1 extras
+  hosts: mcp-a1
+  roles: [oci_host]

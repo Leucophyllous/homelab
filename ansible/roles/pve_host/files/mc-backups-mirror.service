@@ -1,0 +1,12 @@
+[Unit]
+Description=Mirror Minecraft world backups to OrangePi backup-storage
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStartPre=/usr/bin/mountpoint -q /mnt/pve/backup-storage
+ExecStartPre=/usr/bin/mountpoint -q /mnt/nfs-share
+ExecStart=/root/scripts/mc-backups-mirror.sh
+StandardOutput=append:/var/log/mc-backups-mirror.log
+StandardError=append:/var/log/mc-backups-mirror.log

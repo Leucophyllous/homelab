@@ -1,0 +1,5 @@
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+for id in $(pct list | awk '$2=="running"{print $1}'); do
+  echo "fstrim CT$id"; pct fstrim "$id" || echo "failed CT$id"
+done

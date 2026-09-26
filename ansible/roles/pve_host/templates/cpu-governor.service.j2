@@ -1,0 +1,11 @@
+[Unit]
+Description=Set CPU frequency governor ({{ cpu_governor }})
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for c in /sys/devices/system/cpu/cpu*/cpufreq; do echo {{ cpu_governor }} > $c/scaling_governor; [ -n "{{ cpu_epp | default("") }}" ] && [ -w $c/energy_performance_preference ] && echo {{ cpu_epp | default("") }} > $c/energy_performance_preference; done; true'
+
+[Install]
+WantedBy=multi-user.target

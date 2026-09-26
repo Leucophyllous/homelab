@@ -1,0 +1,14 @@
+#!/bin/sh
+. /etc/nut/telegram.env
+case "$NOTIFYTYPE" in
+  ONBATT) e="🔌⚡ 停電: UPSがバッテリー運転に切り替わった(pve02は5分・pveは6分続けば自動停止)";;
+  ONLINE) e="🔌✅ 復電: UPSが商用電源に戻った";;
+  LOWBATT) e="🤋 UPSのバッテリー残量低下(まもなく全台停止)";;
+  FSD) e="⛔ UPSの強制停止(FSD)を開始";;
+  SHUTDOWN) e="⛔ OrangePi(NUTサーバー)を停止する";;
+  REPLBATT) e="🔋 UPSがバッテリー交換を要求している";;
+  COMMBAD|NOCOMM) e="⚠️ UPSと通信できない($NOTIFYTYPE)";;
+  COMMOK) e="✅ UPSとの通信が回復";;
+  *) e="UPS: $NOTIFYTYPE";;
+esac
+curl -s -m 15 -o /dev/null --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$e ($1)" "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"

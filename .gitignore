@@ -1,4 +1,5 @@
 .env
 **/.env
 ansible/inventory.yml
+ansible/host_vars/**/local.yml
 *.retry

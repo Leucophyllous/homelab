@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily offsite backup (restic -> OCI Object Storage)
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/offsite-backup.sh
+Nice=10

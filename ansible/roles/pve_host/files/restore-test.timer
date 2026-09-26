@@ -1,0 +1,7 @@
+[Unit]
+Description=Monthly restore test (10th 11:00)
+[Timer]
+OnCalendar=*-*-10 11:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target

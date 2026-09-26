@@ -1,0 +1,6 @@
+[Unit]
+Description=fstrim all running LXC containers
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pct-fstrim-all

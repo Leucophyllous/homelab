@@ -1,0 +1,8 @@
+#!/bin/sh
+case "$1" in
+  early-shutdown)
+    logger -t upssched-cmd "UPS on battery too long -> requesting early shutdown of $(hostname)"
+    touch /run/nut/upssched/early-shutdown.flag
+    ;;
+  *) logger -t upssched-cmd "unknown timer: $1" ;;
+esac

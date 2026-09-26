@@ -1,0 +1,18 @@
+# oci_host: mcp-a1 liveness checks (MCP server + mail-sync), added 2026-09-25.
+# Secrets (hc_mcp_server_url, hc_mail_sync_url) come from
+# host_vars/mcp-a1/local.yml, not committed to git.
+
+- name: liveness.sh (MCP + mail-sync self-check, self-heals mbsync-runner)
+  ansible.builtin.template:
+    src: liveness.sh.j2
+    dest: /home/ubuntu/liveness.sh
+    owner: ubuntu
+    group: ubuntu
+    mode: "0700"
+
+- name: liveness cron (every 5 min)
+  ansible.builtin.cron:
+    name: mcp-a1 liveness check
+    user: ubuntu
+    minute: "*/5"
+    job: /home/ubuntu/liveness.sh >/dev/null 2>&1

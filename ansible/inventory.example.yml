@@ -2,42 +2,57 @@ all:
   vars:
     ansible_become: true
   children:
+    pve_cluster:
+      vars:
+        ssh_hardening: false   # root password login kept intentionally on pve/pve02
+      hosts:
+        pve:
+          ansible_connection: local
+          nut_shutdown_delay: 360
+          cpu_governor: powersave
+          cpu_epp: balance_performance
+        pve02:
+          ansible_host: 192.168.0.100
+          ansible_user: root
+          nut_shutdown_delay: 300
+          cpu_governor: schedutil
     docker_hosts:
       hosts:
         docker-pve:
-          ansible_host: 192.0.2.15
-          ansible_user: admin
+          ansible_host: 192.168.0.115
+          ansible_user: leila
           docker_mtu: 1454
-          acl_allow: [192.0.2.13, 192.0.2.15, 172.16.0.0/12]
+          acl_allow: [192.168.0.113, 192.168.0.115, 172.16.0.0/12]
         docker-vm:
-          ansible_host: 192.0.2.13
-          ansible_user: admin
+          ansible_host: 192.168.0.113
+          ansible_user: leila
           docker_mtu: 1454
-          acl_allow: [192.0.2.15, 172.16.0.0/12]
+          acl_allow: [192.168.0.115, 172.16.0.0/12]
         db-vm:
-          ansible_host: 192.0.2.45
-          ansible_user: admin
-          acl_allow: [192.0.2.15, 192.0.2.13]
+          ansible_host: 192.168.0.245
+          ansible_user: leila
+          acl_allow: [192.168.0.115, 192.168.0.113]
         pi:
-          ansible_host: 192.0.2.43
+          ansible_host: 192.168.0.243
           ansible_user: root
-          acl_allow: [192.0.2.15, 192.0.2.13]
+          acl_allow: [192.168.0.115, 192.168.0.113]
         mcp-a1:
-          ansible_host: 100.64.0.10
+          ansible_host: 100.69.245.48
           ansible_user: ubuntu
+          ansible_ssh_private_key_file: /root/.ssh/oci_mcp
           docker_api_acl: false
     lxc:
       hosts:
         ct121:
-          ansible_host: 192.0.2.24
+          ansible_host: 192.168.0.124
           ansible_user: root
         ct126:
-          ansible_host: 192.0.2.26
-          ansible_user: admin
+          ansible_host: 192.168.0.126
+          ansible_user: leila
           ssh_permit_root_login: "no"
     others:
       hosts:
         orangepi:
-          ansible_host: 192.0.2.83
-          ansible_user: admin
+          ansible_host: 192.168.0.183
+          ansible_user: orangepi
           ssh_hardening: false

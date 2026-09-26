@@ -1,0 +1,134 @@
+# pve_host: host-level monitoring, backup, power and network hardening
+# added on 2026-09-25 for the pve/pve02 hypervisor nodes themselves.
+# Deliberately does NOT touch /etc/pve/* (cluster filesystem, already
+# replicated pve<->pve02 and captured by the offsite backup).
+
+- name: pve-only scripts present
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/root/scripts/{{ item }}"
+    mode: "0700"
+  loop: [capacity-check.sh, offsite-backup.sh, restore-test.sh, telegram-canary.sh, mc-backups-mirror.sh]
+  when: inventory_hostname == 'pve'
+
+- name: pve-only sbin helpers present
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/sbin/{{ item }}"
+    mode: "0755"
+  loop: [pct-fstrim-all]
+  when: inventory_hostname == 'pve'
+
+- name: pve-only systemd units present
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - capacity-check.service
+    - capacity-check.timer
+    - offsite-backup.service
+    - offsite-backup.timer
+    - restore-test.service
+    - restore-test.timer
+    - telegram-canary.service
+    - telegram-canary.timer
+    - mc-backups-mirror.service
+    - mc-backups-mirror.timer
+    - pct-fstrim.service
+  when: inventory_hostname == 'pve'
+  notify: daemon-reload
+
+- name: pve-only timers enabled
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: [capacity-check.timer, offsite-backup.timer, restore-test.timer, telegram-canary.timer, mc-backups-mirror.timer]
+  when: inventory_hostname == 'pve'
+
+- name: pve-only pct-fstrim.timer enabled (pre-existing, points at the fixed service above)
+  ansible.builtin.systemd_service:
+    name: pct-fstrim.timer
+    enabled: true
+    state: started
+  when: inventory_hostname == 'pve'
+
+# --- CPU governor (both nodes, different target per host_vars) ---
+
+- name: cpu-governor.service
+  ansible.builtin.template:
+    src: cpu-governor.service.j2
+    dest: /etc/systemd/system/cpu-governor.service
+    mode: "0644"
+  notify: daemon-reload
+
+- name: cpu-governor.service enabled
+  ansible.builtin.systemd_service:
+    name: cpu-governor.service
+    enabled: true
+    state: started
+
+# --- NUT early shutdown (both nodes, different delay per host_vars) ---
+
+- name: upssched-cmd helper present
+  ansible.builtin.copy:
+    src: upssched-cmd
+    dest: /usr/local/sbin/upssched-cmd
+    mode: "0755"
+
+- name: upssched.conf (per-host battery-runtime delay)
+  ansible.builtin.template:
+    src: upssched.conf.j2
+    dest: /etc/nut/upssched.conf
+    owner: root
+    group: nut
+    mode: "0640"
+
+- name: ups-early-shutdown path/service units present
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop: [ups-early-shutdown.path, ups-early-shutdown.service]
+  notify: daemon-reload
+
+- name: ups-early-shutdown.path enabled
+  ansible.builtin.systemd_service:
+    name: ups-early-shutdown.path
+    enabled: true
+    state: started
+
+- name: NUT NOTIFYFLAG lines present (upsmon.conf, on-battery/on-line events -> EXEC)
+  ansible.builtin.lineinfile:
+    path: /etc/nut/upsmon.conf
+    regexp: "^NOTIFYFLAG {{ item }} "
+    line: "NOTIFYFLAG {{ item }} SYSLOG+WALL+EXEC"
+  loop: [ONBATT, ONLINE]
+  notify: restart nut-monitor
+
+- name: stray local NUT driver disabled (pve only — UPS is USB-attached to OrangePi, not pve)
+  ansible.builtin.systemd_service:
+    name: nut-driver@apc500.service
+    enabled: false
+    state: stopped
+  when: inventory_hostname == 'pve'
+
+# --- Network: TCP MTU probing (both nodes) ---
+
+- name: tcp_mtu_probing sysctl
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-mtu-probing.conf
+    content: "net.ipv4.tcp_mtu_probing = 1\n"
+    mode: "0644"
+  notify: apply sysctl
+
+# pve only: the slow uplink is on pve's default route; MTU-clamp the
+# route on boot (idempotent: only add the post-up line once)
+- name: MTU-clamped default route on boot (pve only)
+  ansible.builtin.lineinfile:
+    path: /etc/network/interfaces
+    insertafter: "^\\s*gateway 192\\.168\\.0\\.1"
+    line: "\tpost-up ip route replace default via 192.168.0.1 dev vmbr0 onlink mtu 1454"
+    firstmatch: true
+  when: inventory_hostname == 'pve'

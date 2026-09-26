@@ -1,0 +1,12 @@
+- name: daemon-reload
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: restart nut-monitor
+  ansible.builtin.systemd_service:
+    name: nut-monitor
+    state: restarted
+
+- name: apply sysctl
+  ansible.builtin.command: sysctl -p /etc/sysctl.d/90-mtu-probing.conf
+  changed_when: true

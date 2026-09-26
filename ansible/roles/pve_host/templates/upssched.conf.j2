@@ -1,0 +1,5 @@
+CMDSCRIPT /usr/local/sbin/upssched-cmd
+PIPEFN /run/nut/upssched/upssched.pipe
+LOCKFN /run/nut/upssched/upssched.lock
+AT ONBATT * START-TIMER early-shutdown {{ nut_shutdown_delay }}
+AT ONLINE * CANCEL-TIMER early-shutdown

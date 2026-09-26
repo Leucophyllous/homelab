@@ -1,0 +1,5 @@
+[Unit]
+Description=Disk / thin pool / ZFS capacity check across homelab hosts
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/capacity-check.sh

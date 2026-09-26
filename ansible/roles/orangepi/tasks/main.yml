@@ -1,0 +1,47 @@
+# orangepi: NUT battery-event Telegram notifier + daily host-config
+# backup to backup-storage. Added 2026-09-25.
+#
+# Secrets (telegram_bot_token, telegram_chat_id, hc_orangepi_config_url)
+# come from host_vars/orangepi/local.yml, which is NOT committed to
+# git (see .gitignore) — create it locally before running this role.
+
+- name: nut-telegram notifier script
+  ansible.builtin.copy:
+    src: nut-telegram
+    dest: /usr/local/sbin/nut-telegram
+    mode: "0755"
+
+- name: telegram.env (nut group-readable, not world-readable)
+  ansible.builtin.template:
+    src: telegram.env.j2
+    dest: /etc/nut/telegram.env
+    owner: root
+    group: nut
+    mode: "0640"
+
+- name: upsmon.conf uses nut-telegram + all event types notify
+  ansible.builtin.lineinfile:
+    path: /etc/nut/upsmon.conf
+    regexp: "^NOTIFYCMD "
+    line: "NOTIFYCMD /usr/local/sbin/nut-telegram"
+  notify: restart nut-monitor
+
+- name: upsmon.conf NOTIFYFLAG lines present (every event -> EXEC)
+  ansible.builtin.lineinfile:
+    path: /etc/nut/upsmon.conf
+    regexp: "^NOTIFYFLAG {{ item }} "
+    line: "NOTIFYFLAG {{ item }} SYSLOG+WALL+EXEC"
+  loop: [ONBATT, ONLINE, LOWBATT, FSD, SHUTDOWN, REPLBATT, COMMBAD, COMMOK, NOCOMM]
+  notify: restart nut-monitor
+
+- name: orangepi-config-backup script
+  ansible.builtin.template:
+    src: orangepi-config-backup.j2
+    dest: /usr/local/sbin/orangepi-config-backup
+    mode: "0700"
+
+- name: daily config backup cron (03:15)
+  ansible.builtin.copy:
+    dest: /etc/cron.d/orangepi-config-backup
+    content: "15 3 * * * root /usr/local/sbin/orangepi-config-backup\n"
+    mode: "0644"

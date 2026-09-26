@@ -1,0 +1,6 @@
+[Unit]
+Description=Early shutdown because the UPS has been on battery too long
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'rm -f /run/nut/upssched/early-shutdown.flag; logger -t ups-early-shutdown "shutting down (UPS on battery)"; /sbin/shutdown -h +0 "UPS on battery too long"'

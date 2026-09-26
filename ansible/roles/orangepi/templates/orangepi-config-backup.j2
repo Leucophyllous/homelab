@@ -1,0 +1,15 @@
+#!/bin/bash
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+set -o pipefail
+DEST=/mnt/hdd-a/proxmox-ha/host-config/orangepi
+HC={{ hc_orangepi_config_url }}
+mountpoint -q /mnt/hdd-a || { curl -fsS -m 10 -o /dev/null --data-raw 'hdd-a not mounted' "$HC/fail"; exit 1; }
+mkdir -p "$DEST"; chmod 700 "$DEST"
+F="$DEST/orangepi-config-$(date +%F).tar.gz"
+crontab -l > /root/crontab.root 2>/dev/null || true
+if tar czf "$F" --warning=no-file-changed --ignore-failed-read /etc /usr/local /root /home/orangepi/.ssh /var/lib/samba/private /var/lib/tailscale /srv/msdfs_root /var/spool/cron 2>/tmp/ocb.err; then
+  chmod 600 "$F"; find "$DEST" -name 'orangepi-config-*.tar.gz' -mtime +14 -delete
+  curl -fsS -m 10 --retry 3 -o /dev/null "$HC"
+else
+  curl -fsS -m 10 --retry 3 -o /dev/null --data-binary @/tmp/ocb.err "$HC/fail"; exit 1
+fi

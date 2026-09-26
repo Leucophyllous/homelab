@@ -1,0 +1,4 @@
+- name: restart nut-monitor
+  ansible.builtin.systemd_service:
+    name: nut-monitor
+    state: restarted

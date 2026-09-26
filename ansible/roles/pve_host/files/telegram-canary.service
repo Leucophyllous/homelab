@@ -1,0 +1,5 @@
+[Unit]
+Description=Check the homelab Telegram bot is usable (fallback alert by email)
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/telegram-canary.sh
