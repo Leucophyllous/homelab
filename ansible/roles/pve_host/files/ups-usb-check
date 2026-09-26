@@ -1,0 +1,12 @@
+#!/bin/bash
+# Pings healthchecks only while the UPS is really readable over USB.
+# Catches an unplugged/hung USB cable even when NUT keeps serving stale "OL" data.
+set -u
+. /etc/default/ups-usb-check
+fail(){ curl -fsS -m 10 --retry 3 -o /dev/null --data-raw "$1" "$HC_URL/fail"; exit 1; }
+lsusb -d 051d: >/dev/null 2>&1 || fail "UPS (051d) not on USB"
+[ -n "$(upsc apc500@localhost ups.status 2>/dev/null)" ] || fail "upsc returned no ups.status"
+ds=$(upsc apc500@localhost driver.state 2>/dev/null)
+case "$ds" in quiet|dumping) ;; *) fail "driver.state=$ds" ;; esac
+journalctl -u nut-driver@apc500 --since "-6min" --no-pager -q 2>/dev/null | grep -q "No such device" && fail "driver logs: No such device"
+curl -fsS -m 10 --retry 3 -o /dev/null "$HC_URL"

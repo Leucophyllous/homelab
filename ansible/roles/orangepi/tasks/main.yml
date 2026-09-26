@@ -1,9 +1,32 @@
-# orangepi: NUT battery-event Telegram notifier + daily host-config
+# orangepi: NUT secondary + battery-event Telegram notifier + daily host-config
 # backup to backup-storage. Added 2026-09-25.
 #
-# Secrets (telegram_bot_token, telegram_chat_id, hc_orangepi_config_url)
+# Secrets (telegram_bot_token, telegram_chat_id, hc_orangepi_config_url,
+# nut_monitor_password)
 # come from host_vars/orangepi/local.yml, which is NOT committed to
 # git (see .gitignore) — create it locally before running this role.
+
+- name: nut netclient (secondary of the NUT primary)
+  ansible.builtin.lineinfile:
+    path: /etc/nut/nut.conf
+    regexp: "^MODE="
+    line: "MODE=netclient"
+  notify: restart nut-monitor
+
+- name: upsmon MONITOR points at the NUT primary as secondary
+  ansible.builtin.lineinfile:
+    path: /etc/nut/upsmon.conf
+    regexp: "^MONITOR "
+    line: "MONITOR apc500@{{ nut_server }} 1 monsecondary {{ nut_monitor_password }} secondary"
+  no_log: true
+  notify: restart nut-monitor
+
+- name: local NUT driver/upsd disabled (the UPS is no longer USB-attached here)
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: [nut-server.service, nut-driver@apc500.service, nut-driver-enumerator.path, nut-driver-enumerator.service]
 
 - name: nut-telegram notifier script
   ansible.builtin.copy:

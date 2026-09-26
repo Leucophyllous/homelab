@@ -11,6 +11,7 @@ dfp(){ awk 'NR>1{gsub("%","",$5); print $6, $5}'; }
 { df -P / /mnt/hdd1 /mnt/nfs-share | dfp | sed 's/^/pve:/'
   echo "pve:thin-data $(lvs --noheadings -o data_percent pve/data | awk '{printf "%d",$1}')"
   zpool list -H -o name,cap | awk '{gsub("%","",$2); print "pve:zfs-"$1, $2}'
+  for id in $(pct list | awk 'NR>1 && $2=="running"{print $1}'); do pct exec $id -- df -P / 2>/dev/null | dfp | sed "s/^/ct$id:/"; done
   ssh $O 192.168.0.100 'df -P / | awk "NR>1{gsub(\"%\",\"\",\$5); print \$6, \$5}"; echo "thin-data $(lvs --noheadings -o data_percent pve/data | awk "{printf \"%d\",\$1}")"; zpool list -H -o name,cap | awk "{gsub(\"%\",\"\",\$2); print \"zfs-\"\$1, \$2}"' | sed 's/^/pve02:/'
   ssh $O orangepi@192.168.0.183 'df -P / /mnt/hdd-a /mnt/hdd-b /mnt/hdd-c' | dfp | sed 's/^/orangepi:/'
   for h in docker-vm:192.168.0.113; do ssh $O leila@${h#*:} 'df -P /' | dfp | sed "s/^/${h%%:*}:/"; done

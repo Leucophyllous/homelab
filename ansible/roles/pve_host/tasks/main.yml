@@ -1,3 +1,6 @@
+- name: node base (both nodes)
+  ansible.builtin.import_tasks: node_base.yml
+
 # pve_host: host-level monitoring, backup, power and network hardening
 # added on 2026-09-25 for the pve/pve02 hypervisor nodes themselves.
 # Deliberately does NOT touch /etc/pve/* (cluster filesystem, already
@@ -107,7 +110,7 @@
   loop: [ONBATT, ONLINE]
   notify: restart nut-monitor
 
-- name: stray local NUT driver disabled (pve only — UPS is USB-attached to OrangePi, not pve)
+- name: stray local NUT driver disabled (pve only — the UPS is USB-attached to pve02)
   ansible.builtin.systemd_service:
     name: nut-driver@apc500.service
     enabled: false

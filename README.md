@@ -5,7 +5,7 @@
 セルフホストサービス・ゲームサーバー・監視と自動化の基盤を動かしている。
 
 このリポジトリには、各サービスの `compose.yaml`・自前イメージの `Dockerfile`・構成管理の Ansible を収録している。
-秘密情報や内部アドレスは `${VAR}` 参照に置き換えており、**リポジトリ自体には含めない**。
+秘密情報(パスワード・トークン・通知用の URL など)は `${VAR}` 参照や git 管理外の `ansible/host_vars/*/local.yml` に分けており、**リポジトリ自体には含めない**。LAN 内のアドレス(外部からは到達できない)はインベントリの見本やスクリプトにそのまま含まれる。
 
 ## 構成図
 
@@ -29,12 +29,12 @@ flowchart LR
       end
       subgraph pve02["pve02"]
         dvm["VM docker-vm (HA)<br>Grafana/Prometheus/nut-exporter<br>Home Assistant / bots / manmaru / ilust<br>Dockge (agent)"]
+        nut["NUT (UPS、USB 接続)"]
       end
     end
     subgraph opi["OrangePi 5 Plus"]
       nas["NAS (SMB)"]
       bs["backup-storage (NFS)"]
-      nut["NUT (UPS)"]
       sb["Minecraft 代理"]
     end
   end
@@ -69,6 +69,7 @@ flowchart LR
   n8n -->|AI 診断・説明| gem
   n8n -.->|予備| oll2
   n8n -->|heartbeat| hc
+  nut -.->|USB 監視| hc
   gm -->|bundle| gd
   gm -.->|mirror pull| gh
   cluster -.->|アーカイブ| gd
@@ -91,9 +92,9 @@ flowchart LR
 | ホスト | 役割 |
 |---|---|
 | pve | Proxmox ノード(デスクトップ機)。n8n・Ollama を CT でネイティブに動かす |
-| pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm) |
+| pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm)、UPS を USB でつなぐ NUT サーバー |
 | Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice |
-| OrangePi 5 Plus | NAS、バックアップ置き場、UPS の NUT サーバー、Minecraft の代理サーバー |
+| OrangePi 5 Plus | NAS、バックアップ置き場、Minecraft の代理サーバー、UPS イベントの Telegram 通知(NUT の従) |
 | mcp-a1 (OCI A1) | MCP サーバー、メール集約、軽量 Ollama、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
 
 ## ゲスト
@@ -128,9 +129,9 @@ flowchart LR
 
 - **HA**: `docker-vm` は ZFS(`hapool`)上にあり、相手ノードへ2分毎にレプリケーション。ノードが落ちると生き残った側で自動再開する(実測でおよそ5〜8分)。計画的な移動はライブマイグレーションで停止 0.1 秒未満。n8n・Ollama は CT ネイティブのため vzdump によるバックアップ+復元でのみ対応(HA対象外)。
 - **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つ。
-- **停電**: UPS を OrangePi の NUT が監視する。バッテリー運転が続くと pve02(5分)・pve(6分)が先に停止し、残量低下で残りも停止する。
+- **停電**: UPS は pve02 に USB でつなぎ、pve02 の NUT が主として監視する(pve・OrangePi・Raspberry Pi は従)。バッテリー運転が続くと pve02(5分)・pve(6分)が停止し、主がいなくなった時点で従も停止する。USB が抜けて NUT が古い値を返し続ける状態は、healthchecks.io の `ups-usb`(5分毎)で検知する。
 - **Minecraft**: HA の対象外。OrangePi に毎時同期した代理サーバーを、Telegram のコマンドで手動で切り替える。
-- **AI 診断**: Gemini が主、CT の Ollama(14b)が予備。両方ダメでも通知自体は届く。
+- **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、CT の Ollama(14b、常駐)が予備。両方ダメでも通知自体は届く。
 
 ## バックアップ
 
@@ -153,13 +154,14 @@ flowchart LR
 - **Status Monitor(n8n)**: 1分毎に HTTP/TCP で各サービスを確認し、変化したときだけ Telegram に通知(AI 診断付き)。Cloudflare Access の裏にある管理画面は LAN 側を直接確認する。公開 URL は3回連続の失敗で通知し、外部経路だけの一斉障害は1通にまとめる。`/maintenance 30m` で作業中の通知を止められる。
 - **Kuma Fix(n8n)**: 通知の「修正」ボタンから、監視ごとに決めた固定の復旧コマンド(`docker restart` など)を実行して再確認する。
 - **Discord Family Bot(n8n)**: 家族が Discord の `/fix` コマンドでサービスを選ぶと、Kuma Fix と同じホワイトリスト・復旧ロジックで自動修復を試み、Gemini(失敗時 Ollama)が結果を一言で説明してメッセージを更新する。署名検証(Ed25519)込みで n8n 単体で完結。
+- **AI 活動ログ(n8n)**: Gemini/Ollama の診断と、Kuma Fix・Discord Family Bot の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
-- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。
-- **容量**: 毎時、全ホストのディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
+- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
+- **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎)、アプリと OS パッケージ(Native Update Check、毎日)、OCI 側のイメージ(毎週)。反映はボタンか手動。
 - **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
 - **構成のずれ検知**: 毎週 Ansible を試走し、ずれや到達できないホストがあれば通知する。
-- **死活の外部確認**: n8n・MCP サーバー・メール同期・マイクラ代理サーバー同期は healthchecks.io に定期的に報告する。止まったら外から分かる。
+- **死活の外部確認**: n8n・MCP サーバー・メール同期・マイクラ代理サーバー同期・GitHub ミラー・UPS の USB 接続は healthchecks.io に定期的に報告する。止まったら外から分かる。
 
 ## 構成管理(Ansible)
 
@@ -171,13 +173,15 @@ ansible-playbook site.yml
 ansible-playbook fetch-stacks.yml
 ```
 
+秘密情報(NUT のパスワード、healthchecks の URL、Telegram のトークンなど)は `host_vars/<ホスト>/local.yml`(git 管理外)に置く。
+
 | ロール | 内容 |
 |---|---|
 | common | タイムゾーン、ロケール、セキュリティ更新の自動適用、SSH の硬化 |
 | lxc | wait-online のマスク、SSH は常駐型に統一 |
 | docker | `daemon.json`(ログの上限・MTU)、Docker API の ACL |
-| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、クロスホスト SSH 用の known_hosts 配布 |
-| orangepi | NUT バッテリーイベント通知、設定の日次バックアップ |
+| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、NUT(`nut_primary` のホストが主、他は従)、クロスホスト SSH 用の known_hosts 配布 |
+| orangepi | NUT の従設定とバッテリーイベント通知、設定の日次バックアップ |
 | oci_host | mcp-a1(MCP サーバー・メール同期)の死活監視と自己修復 |
 
 新しいサーバーは、インベントリに追加して `site.yml` を流せば共通の設定が入る。作り直すときは `stacks/` からスタックを置き、データをバックアップから戻す。

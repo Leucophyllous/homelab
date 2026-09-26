@@ -1,0 +1,7 @@
+[Unit]
+Description=Check that the UPS is readable over USB and ping healthchecks
+After=nut-server.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ups-usb-check

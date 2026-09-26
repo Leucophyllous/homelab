@@ -1,6 +1,7 @@
 all:
   vars:
     ansible_become: true
+    nut_server: 192.168.0.100   # NUT primary (UPS USB is attached to pve02)
   children:
     pve_cluster:
       vars:
@@ -15,6 +16,7 @@ all:
           ansible_host: 192.168.0.100
           ansible_user: root
           nut_shutdown_delay: 300
+          nut_primary: true
           cpu_governor: schedutil
     docker_hosts:
       hosts:

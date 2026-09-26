@@ -14,3 +14,9 @@
 - name: update initramfs
   ansible.builtin.command: update-initramfs -u -k all
   changed_when: true
+
+- name: restart nut-server
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+  loop: [nut-driver@apc500.service, nut-server.service]

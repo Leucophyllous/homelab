@@ -115,12 +115,65 @@
   loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
   when: laptop | default(false)
 
-- name: nut netclient mode
+- name: nut-server installed (NUT primary only; the UPS is USB-attached there)
+  ansible.builtin.apt:
+    name: nut-server
+    state: present
+  when: nut_primary | default(false)
+
+- name: nut mode (netserver on the NUT primary, netclient elsewhere)
   ansible.builtin.lineinfile:
     path: /etc/nut/nut.conf
     regexp: "^MODE="
-    line: "MODE=netclient"
+    line: "MODE={{ 'netserver' if nut_primary | default(false) else 'netclient' }}"
   notify: restart nut-monitor
+
+- name: ups.conf / upsd.conf / upsd.users (NUT primary only)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/nut/{{ item }}"
+    owner: root
+    group: nut
+    mode: "0640"
+  loop: [ups.conf, upsd.conf, upsd.users]
+  no_log: true
+  when: nut_primary | default(false)
+  notify: restart nut-server
+
+- name: nut driver and upsd enabled (NUT primary only)
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: [nut-driver@apc500.service, nut-server.service]
+  when: nut_primary | default(false)
+
+- name: ups-usb-check script and units (NUT primary only)
+  ansible.builtin.copy:
+    src: "{{ item.s }}"
+    dest: "{{ item.d }}"
+    mode: "{{ item.m }}"
+  loop:
+    - { s: ups-usb-check, d: /usr/local/sbin/ups-usb-check, m: "0755" }
+    - { s: ups-usb-check.service, d: /etc/systemd/system/ups-usb-check.service, m: "0644" }
+    - { s: ups-usb-check.timer, d: /etc/systemd/system/ups-usb-check.timer, m: "0644" }
+  when: nut_primary | default(false)
+
+- name: ups-usb-check healthchecks URL (NUT primary only)
+  ansible.builtin.template:
+    src: ups-usb-check.default.j2
+    dest: /etc/default/ups-usb-check
+    mode: "0600"
+  no_log: true
+  when: nut_primary | default(false)
+
+- name: ups-usb-check.timer enabled (NUT primary only)
+  ansible.builtin.systemd_service:
+    name: ups-usb-check.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: nut_primary | default(false)
 
 - name: nut monitor and notify settings
   ansible.builtin.lineinfile:
@@ -128,7 +181,8 @@
     regexp: "{{ item.r }}"
     line: "{{ item.l }}"
   loop:
-    - { r: "^MONITOR ", l: "MONITOR apc500@192.168.0.183 1 monsecondary {{ nut_monitor_password }} secondary" }
+    - r: "^MONITOR "
+      l: "{{ ('MONITOR apc500@localhost 1 monuser ' ~ nut_primary_password ~ ' primary') if nut_primary | default(false) else ('MONITOR apc500@' ~ nut_server ~ ' 1 monsecondary ' ~ nut_monitor_password ~ ' secondary') }}"
     - { r: "^NOTIFYCMD ", l: "NOTIFYCMD /usr/sbin/upssched" }
     - { r: "^RUN_AS_USER ", l: "RUN_AS_USER root", when: "{{ nut_run_as_root | default(false) }}" }
   when: item.when | default(true) | bool
