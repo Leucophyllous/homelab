@@ -1,0 +1,12 @@
+#!/bin/bash
+set -u
+DEST=/mnt/pve/backup-storage/host-config/{{ inventory_hostname }}
+LOG=/var/log/host-config-backup.log
+mkdir -p "$DEST"
+{
+  echo "=== $(date) ==="
+  cd /etc && etckeeper commit "scheduled snapshot" >/dev/null 2>&1
+  tar czf "$DEST/etc-git.tar.gz.tmp" -C /etc .git && mv "$DEST/etc-git.tar.gz.tmp" "$DEST/etc-git.tar.gz"
+  tar czf "$DEST/root-scripts.tar.gz.tmp" -C /root --exclude='*.bak' $(cd /root && ls -d *.sh scripts ansible 2>/dev/null) && mv "$DEST/root-scripts.tar.gz.tmp" "$DEST/root-scripts.tar.gz"
+  echo "done: $?"
+} >> "$LOG" 2>&1

@@ -10,3 +10,7 @@
 - name: apply sysctl
   ansible.builtin.command: sysctl -p /etc/sysctl.d/90-mtu-probing.conf
   changed_when: true
+
+- name: update initramfs
+  ansible.builtin.command: update-initramfs -u -k all
+  changed_when: true

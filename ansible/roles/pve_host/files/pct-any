@@ -1,0 +1,10 @@
+#!/bin/bash
+set -u
+[ "$#" -ge 2 ] || { echo "usage: pct-any <pct-subcommand> <vmid> [args...]" >&2; exit 2; }
+ID=$2
+NODE=$(python3 -c "import json,sys;print(json.load(open('/etc/pve/.vmlist'))['ids'].get(sys.argv[1],{}).get('node',''))" "$ID")
+[ -n "$NODE" ] || { echo "vmid $ID not found in cluster" >&2; exit 1; }
+if [ "$NODE" = "$(hostname)" ]; then exec pct "$@"; fi
+IP=$(awk -v n="$NODE" '$1=="name:" && $2==n {f=1} f && $1=="ring0_addr:" {print $2; exit}' /etc/pve/corosync.conf)
+[ -n "$IP" ] || { echo "no address for node $NODE" >&2; exit 1; }
+exec ssh -o BatchMode=yes -o ConnectTimeout=5 root@"$IP" "pct $(printf '%q ' "$@")"

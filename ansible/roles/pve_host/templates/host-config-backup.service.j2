@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup {{ inventory_hostname }} host /etc git history + root scripts
+
+[Service]
+Type=oneshot
+ExecStart=/root/host-config-backup.sh

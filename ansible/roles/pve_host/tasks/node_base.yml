@@ -1,0 +1,234 @@
+- name: node directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /root/scripts
+    - /etc/systemd/system/host-config-backup.service.d
+
+- name: laptop directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: [/etc/systemd/logind.conf.d, /etc/systemd/sleep.conf.d]
+  when: laptop | default(false)
+
+- name: enterprise repos disabled
+  ansible.builtin.command: "mv /etc/apt/sources.list.d/{{ item }} /etc/apt/sources.list.d/{{ item }}.disabled"
+  args:
+    removes: "/etc/apt/sources.list.d/{{ item }}"
+  loop: [pve-enterprise.sources, ceph.sources]
+
+- name: no-subscription repos
+  ansible.builtin.copy:
+    dest: "/etc/apt/sources.list.d/{{ item.f }}"
+    content: "{{ item.c }}\n"
+    mode: "0644"
+  loop:
+    - { f: pve-no-subscription.list, c: "deb http://download.proxmox.com/debian/pve trixie pve-no-subscription" }
+    - { f: ceph-no-subscription.list, c: "deb http://download.proxmox.com/debian/ceph-squid trixie no-subscription" }
+  register: repo_nosub
+
+- name: tailscale keyring
+  ansible.builtin.command: curl -fsSL -o /usr/share/keyrings/tailscale-archive-keyring.gpg https://pkgs.tailscale.com/stable/debian/trixie.noarmor.gpg
+  args:
+    creates: /usr/share/keyrings/tailscale-archive-keyring.gpg
+
+- name: tailscale repo
+  ansible.builtin.lineinfile:
+    path: /etc/apt/sources.list.d/tailscale.list
+    regexp: "^deb .*pkgs.tailscale.com"
+    line: "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian trixie main"
+    create: true
+    mode: "0644"
+  register: repo_ts
+
+- name: apt cache refreshed after repo change
+  ansible.builtin.apt:
+    update_cache: true
+  when: repo_nosub.changed or repo_ts.changed
+
+- name: node packages
+  ansible.builtin.apt:
+    name: [corosync-qdevice, etckeeper, nut-client, tailscale, htop, fio, nmap, sqlite3, tcpdump, strace, fastfetch]
+    state: present
+
+- name: softdog reboots instead of powering off
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/softdog-reboot.conf
+    content: "options softdog soft_reboot_cmd=\"/usr/sbin/reboot -ff\"\n"
+    mode: "0644"
+  notify: update initramfs
+
+- name: zfs arc limit
+  ansible.builtin.template:
+    src: zfs.conf.j2
+    dest: /etc/modprobe.d/zfs.conf
+    mode: "0644"
+  notify: update initramfs
+
+- name: swappiness
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/99-swappiness.conf
+    content: "vm.swappiness=10\n"
+    mode: "0644"
+
+- name: intel 510 ncq off
+  ansible.builtin.copy:
+    src: 61-intel510-noncq.rules
+    dest: /etc/udev/rules.d/61-intel510-noncq.rules
+    mode: "0644"
+
+- name: laptop lid and keys ignored
+  ansible.builtin.copy:
+    dest: /etc/systemd/logind.conf.d/99-disable-laptop-sleep.conf
+    content: |
+      [Login]
+      HandleLidSwitch=ignore
+      HandleLidSwitchExternalPower=ignore
+      HandleLidSwitchDocked=ignore
+      HandleSuspendKey=ignore
+      HandleHibernateKey=ignore
+      HandlePowerKey=ignore
+      IdleAction=ignore
+    mode: "0644"
+  when: laptop | default(false)
+
+- name: laptop sleep disabled
+  ansible.builtin.copy:
+    dest: /etc/systemd/sleep.conf.d/99-disable-sleep.conf
+    content: |
+      [Sleep]
+      AllowSuspend=no
+      AllowHibernation=no
+      AllowSuspendThenHibernate=no
+      AllowHybridSleep=no
+    mode: "0644"
+  when: laptop | default(false)
+
+- name: laptop sleep targets masked
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop: [sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
+  when: laptop | default(false)
+
+- name: nut netclient mode
+  ansible.builtin.lineinfile:
+    path: /etc/nut/nut.conf
+    regexp: "^MODE="
+    line: "MODE=netclient"
+  notify: restart nut-monitor
+
+- name: nut monitor and notify settings
+  ansible.builtin.lineinfile:
+    path: /etc/nut/upsmon.conf
+    regexp: "{{ item.r }}"
+    line: "{{ item.l }}"
+  loop:
+    - { r: "^MONITOR ", l: "MONITOR apc500@192.168.0.183 1 monsecondary {{ nut_monitor_password }} secondary" }
+    - { r: "^NOTIFYCMD ", l: "NOTIFYCMD /usr/sbin/upssched" }
+    - { r: "^RUN_AS_USER ", l: "RUN_AS_USER root", when: "{{ nut_run_as_root | default(false) }}" }
+  when: item.when | default(true) | bool
+  no_log: true
+  notify: restart nut-monitor
+
+- name: cluster helper scripts
+  ansible.builtin.copy:
+    src: "{{ item.s }}"
+    dest: "{{ item.d }}"
+    mode: "{{ item.m }}"
+  loop:
+    - { s: pct-any, d: /usr/local/sbin/pct-any, m: "0755" }
+    - { s: update-report.sh, d: /root/scripts/update-report.sh, m: "0700" }
+
+- name: mc failover onboot helper
+  ansible.builtin.copy:
+    src: mc-ct121-onboot
+    dest: /usr/local/sbin/mc-ct121-onboot
+    mode: "0755"
+  when: inventory_hostname == 'pve02'
+
+- name: vzdump healthchecks hook
+  ansible.builtin.template:
+    src: vzdump-hc.sh.j2
+    dest: /usr/local/bin/vzdump-hc.sh
+    mode: "0755"
+
+- name: vzdump.conf settings
+  ansible.builtin.lineinfile:
+    path: /etc/vzdump.conf
+    regexp: "^{{ item.k }}:"
+    line: "{{ item.k }}: {{ item.v }}"
+  loop:
+    - { k: tmpdir, v: /var/tmp }
+    - { k: script, v: /usr/local/bin/vzdump-hc.sh }
+
+- name: host-config-backup script
+  ansible.builtin.template:
+    src: host-config-backup.sh.j2
+    dest: /root/host-config-backup.sh
+    mode: "0755"
+
+- name: host-config-backup units
+  ansible.builtin.template:
+    src: "{{ item.s }}"
+    dest: "{{ item.d }}"
+    mode: "0644"
+  loop:
+    - { s: host-config-backup.service.j2, d: /etc/systemd/system/host-config-backup.service }
+    - { s: host-config-hc.conf.j2, d: /etc/systemd/system/host-config-backup.service.d/healthchecks.conf }
+  notify: daemon-reload
+
+- name: host-config-backup timer unit
+  ansible.builtin.copy:
+    src: host-config-backup.timer
+    dest: /etc/systemd/system/host-config-backup.timer
+    mode: "0644"
+  notify: daemon-reload
+
+- name: host-config-backup timer enabled
+  ansible.builtin.systemd_service:
+    name: host-config-backup.timer
+    enabled: true
+    state: started
+
+- name: subscription nag removal script
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/pve-nonag
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      f=/usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+      [ -f "$f" ] || exit 0
+      if grep -q "res.data.status.toLowerCase() !== 'active'" "$f"; then
+        sed -i "s/res.data.status.toLowerCase() !== 'active'/false/" "$f"
+        systemctl reload-or-restart pveproxy.service
+        echo patched
+      fi
+
+- name: subscription nag removal hook
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/86pve-nonag
+    content: "DPkg::Post-Invoke { \"/usr/local/sbin/pve-nonag >/dev/null 2>&1 || true\"; };\n"
+    mode: "0644"
+
+- name: subscription nag removed now
+  ansible.builtin.command: /usr/local/sbin/pve-nonag
+  register: nonag_now
+  changed_when: "'patched' in nonag_now.stdout"
+
+- name: known peer host keys for cross-host ssh hops
+  ansible.builtin.shell: |
+    for h in 192.168.0.113 192.168.0.142 192.168.0.146 192.168.0.150 192.168.0.100 192.168.0.183 192.168.0.243 100.69.245.48; do
+      ssh-keyscan -t rsa,ed25519 -T 3 $h 2>/dev/null
+    done > /tmp/khnew
+    touch /root/.ssh/known_hosts
+    cat /tmp/khnew >> /root/.ssh/known_hosts
+    sort -u -o /root/.ssh/known_hosts /root/.ssh/known_hosts
+    rm -f /tmp/khnew
+  args:
+    executable: /bin/bash
+  changed_when: false

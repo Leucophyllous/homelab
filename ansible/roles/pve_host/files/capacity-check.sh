@@ -13,7 +13,7 @@ dfp(){ awk 'NR>1{gsub("%","",$5); print $6, $5}'; }
   zpool list -H -o name,cap | awk '{gsub("%","",$2); print "pve:zfs-"$1, $2}'
   ssh $O 192.168.0.100 'df -P / | awk "NR>1{gsub(\"%\",\"\",\$5); print \$6, \$5}"; echo "thin-data $(lvs --noheadings -o data_percent pve/data | awk "{printf \"%d\",\$1}")"; zpool list -H -o name,cap | awk "{gsub(\"%\",\"\",\$2); print \"zfs-\"\$1, \$2}"' | sed 's/^/pve02:/'
   ssh $O orangepi@192.168.0.183 'df -P / /mnt/hdd-a /mnt/hdd-b /mnt/hdd-c' | dfp | sed 's/^/orangepi:/'
-  for h in docker-pve:192.168.0.115 docker-vm:192.168.0.113 db-vm:192.168.0.245; do ssh $O leila@${h#*:} 'df -P /' | dfp | sed "s/^/${h%%:*}:/"; done
+  for h in docker-vm:192.168.0.113; do ssh $O leila@${h#*:} 'df -P /' | dfp | sed "s/^/${h%%:*}:/"; done
   ssh $O root@192.168.0.243 'df -P /' | dfp | sed 's/^/pi:/'
   ssh $O -i /root/.ssh/oci_mcp ubuntu@100.69.245.48 'df -P /' | dfp | sed 's/^/mcp-a1:/'
 } > "$tmp" 2>/dev/null

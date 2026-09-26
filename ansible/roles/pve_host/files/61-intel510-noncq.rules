@@ -1,0 +1,1 @@
+ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ENV{ID_SERIAL}=="INTEL_SSDSC2MH120A2_LNEL124300SZ120CGN", ATTR{device/queue_depth}="1"

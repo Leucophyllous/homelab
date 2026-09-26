@@ -18,24 +18,15 @@ all:
           cpu_governor: schedutil
     docker_hosts:
       hosts:
-        docker-pve:
-          ansible_host: 192.168.0.115
-          ansible_user: leila
-          docker_mtu: 1454
-          acl_allow: [192.168.0.113, 192.168.0.115, 172.16.0.0/12]
         docker-vm:
           ansible_host: 192.168.0.113
           ansible_user: leila
           docker_mtu: 1454
-          acl_allow: [192.168.0.115, 172.16.0.0/12]
-        db-vm:
-          ansible_host: 192.168.0.245
-          ansible_user: leila
-          acl_allow: [192.168.0.115, 192.168.0.113]
+          acl_allow: [172.16.0.0/12]
         pi:
           ansible_host: 192.168.0.243
           ansible_user: root
-          acl_allow: [192.168.0.115, 192.168.0.113]
+          acl_allow: [192.168.0.113]
         mcp-a1:
           ansible_host: 100.69.245.48
           ansible_user: ubuntu
@@ -50,6 +41,12 @@ all:
           ansible_host: 192.168.0.126
           ansible_user: leila
           ssh_permit_root_login: "no"
+        ct142:
+          ansible_host: 192.168.0.142
+          ansible_user: root
+        ct146:
+          ansible_host: 192.168.0.146
+          ansible_user: root
     others:
       hosts:
         orangepi:

@@ -2,7 +2,7 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 set -a; . /root/scripts/.env; set +a
 HC=$(awk '$1=="restore-test"{print $2}' /root/scripts/hc-urls.txt)
-ORDER=(110 112 113 121 126)
+ORDER=(112 121 126)
 STATE=/var/lib/restore-test.idx
 N=192.168.0.100
 R(){ ssh -o BatchMode=yes -o ConnectTimeout=10 root@$N "$@"; }
@@ -18,13 +18,13 @@ cleanup
 t0=$(date +%s)
 case "$vol" in
   *vzdump-qemu-*)
-    R "qmrestore $vol $tid --storage local-lvm --unique 1 --bwlimit 40960" >/tmp/restore-test.log 2>&1 || fail "qmrestore失敗"
+    R "qmrestore $vol $tid --storage hapool --unique 1 --bwlimit 40960" >/tmp/restore-test.log 2>&1 || fail "qmrestore失敗"
     net=$(R "qm config $tid" | awk -F': ' '/^net0:/{print $2}')
     R "qm set $tid --net0 '$net,link_down=1' --memory 2048 --balloon 0 --onboot 0 >/dev/null && qm start $tid" >>/tmp/restore-test.log 2>&1 || fail "起動失敗"
     ok=0; for n in $(seq 1 30); do sleep 8; R "qm agent $tid ping" >/dev/null 2>&1 && { ok=1; break; }; done
     [ $ok = 1 ] || fail "ゲストエージェントが応答しない(OSが起動しない?)"; how="OS起動・ゲストエージェント応答";;
   *vzdump-lxc-*)
-    R "pct restore $tid $vol --storage local-lvm --unique 1 --bwlimit 40960" >/tmp/restore-test.log 2>&1 || fail "pct restore失敗"
+    R "pct restore $tid $vol --storage hapool --unique 1 --bwlimit 40960" >/tmp/restore-test.log 2>&1 || fail "pct restore失敗"
     R "pct set $tid --delete net0 --memory 2048 --swap 512 --onboot 0 && pct start $tid" >>/tmp/restore-test.log 2>&1 || fail "起動失敗"
     ok=0; for n in $(seq 1 20); do sleep 6; s=$(R "pct exec $tid -- systemctl is-system-running" 2>/dev/null); case "$s" in running|degraded) ok=1; break;; esac; done
     [ $ok = 1 ] || fail "systemdが起動完了しない(状態: ${s:-不明})"; how="systemd起動完了($s)";;
