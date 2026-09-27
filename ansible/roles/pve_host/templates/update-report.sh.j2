@@ -22,9 +22,9 @@ APP[prometheus]=$(j http://{{ hostvars['docker-vm'].ansible_host }}:9090/api/v1/
 APP[paper]=$(/usr/local/sbin/pct-any exec 121 -- bash -c 'ls /opt/minecraft/data/paper-*.jar 2>/dev/null | sed -E "s#.*/paper-(.*)\.jar#\1#" | sort -V | tail -1' 2>/dev/null)
 PLUGINS=$(timeout 60 /usr/local/sbin/pct-any exec 121 -- /usr/local/bin/mc-plugin-versions 2>/dev/null)
 {
-  for k in "${!APT[@]}"; do echo "apt\t$k\t${APT[$k]}"; done
-  for k in "${!APP[@]}"; do echo "app\t$k\t${APP[$k]}"; done
-  echo "plugins\tx\t$PLUGINS"
+  for k in "${!APT[@]}"; do echo "apt	$k	${APT[$k]}"; done
+  for k in "${!APP[@]}"; do echo "app	$k	${APP[$k]}"; done
+  echo "plugins	x	$PLUGINS"
 } | python3 -c '
 import sys,json
 out={"apt":{},"apps":{},"plugins":{},"errors":[]}
