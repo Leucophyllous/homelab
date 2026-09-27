@@ -46,6 +46,9 @@ all:
         ct142:
           ansible_host: 192.168.0.142
           ansible_user: root
+          extra_routes:  # n8n needs to reach A1 (mcp-a1) over Tailscale via the orangepi subnet router
+            - dest: 100.64.0.0/10
+              via: 192.168.0.183
         ct146:
           ansible_host: 192.168.0.146
           ansible_user: root
