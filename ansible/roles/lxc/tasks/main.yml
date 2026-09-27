@@ -14,3 +14,20 @@
     name: ssh.service
     enabled: true
     state: started
+
+- name: extra static routes persisted (post-up in /etc/network/interfaces)
+  ansible.builtin.lineinfile:
+    path: /etc/network/interfaces
+    insertafter: '^\s*gateway '
+    line: "\tpost-up ip route replace {{ item.dest }} via {{ item.via }} dev eth0"
+    regexp: "post-up ip route replace {{ item.dest }} via"
+  loop: "{{ extra_routes | default([]) }}"
+  loop_control:
+    label: "{{ item.dest }} via {{ item.via }}"
+
+- name: extra static routes applied now
+  ansible.builtin.command: "ip route replace {{ item.dest }} via {{ item.via }} dev eth0"
+  loop: "{{ extra_routes | default([]) }}"
+  loop_control:
+    label: "{{ item.dest }} via {{ item.via }}"
+  changed_when: false
