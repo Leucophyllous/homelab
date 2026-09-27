@@ -6,12 +6,20 @@
 # Deliberately does NOT touch /etc/pve/* (cluster filesystem, already
 # replicated pve<->pve02 and captured by the offsite backup).
 
-- name: pve-only scripts present
+- name: pve-only scripts present (no per-host IPs)
   ansible.builtin.copy:
     src: "{{ item }}"
     dest: "/root/scripts/{{ item }}"
     mode: "0700"
-  loop: [capacity-check.sh, offsite-backup.sh, restore-test.sh, telegram-canary.sh, mc-backups-mirror.sh]
+  loop: [telegram-canary.sh, mc-backups-mirror.sh]
+  when: inventory_hostname == 'pve'
+
+- name: pve-only scripts present (templated, embed other hosts' LAN/Tailscale IPs)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/root/scripts/{{ item }}"
+    mode: "0700"
+  loop: [capacity-check.sh, offsite-backup.sh, restore-test.sh]
   when: inventory_hostname == 'pve'
 
 - name: pve-only sbin helpers present
@@ -131,7 +139,7 @@
 - name: MTU-clamped default route on boot (pve only)
   ansible.builtin.lineinfile:
     path: /etc/network/interfaces
-    insertafter: "^\\s*gateway 192\\.168\\.0\\.1"
-    line: "\tpost-up ip route replace default via 192.168.0.1 dev vmbr0 onlink mtu 1454"
+    insertafter: "^\\s*gateway {{ lan_gateway | regex_replace('\\.', '\\\\.') }}"
+    line: "\tpost-up ip route replace default via {{ lan_gateway }} dev vmbr0 onlink mtu 1454"
     firstmatch: true
   when: inventory_hostname == 'pve'

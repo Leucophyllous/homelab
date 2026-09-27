@@ -1,7 +1,8 @@
 all:
   vars:
     ansible_become: true
-    nut_server: 192.168.0.100   # NUT primary (UPS USB is attached to pve02)
+    nut_server: 192.168.0.10   # NUT primary (UPS USB is attached to pve02)
+    lan_gateway: 192.168.0.1
   children:
     pve_cluster:
       vars:
@@ -9,11 +10,12 @@ all:
       hosts:
         pve:
           ansible_connection: local
+          ansible_host: 192.168.0.11   # pve's own LAN IP (used by other hosts' scripts, not for connecting to itself)
           nut_shutdown_delay: 360
           cpu_governor: powersave
           cpu_epp: balance_performance
         pve02:
-          ansible_host: 192.168.0.100
+          ansible_host: 192.168.0.10
           ansible_user: root
           nut_shutdown_delay: 300
           nut_primary: true
@@ -21,40 +23,40 @@ all:
     docker_hosts:
       hosts:
         docker-vm:
-          ansible_host: 192.168.0.113
+          ansible_host: 192.168.0.12
           ansible_user: leila
           docker_mtu: 1454
           acl_allow: [172.16.0.0/12]
         pi:
-          ansible_host: 192.168.0.243
+          ansible_host: 192.168.0.13
           ansible_user: root
-          acl_allow: [192.168.0.113]
+          acl_allow: [192.168.0.12]
         mcp-a1:
-          ansible_host: 100.69.245.48
+          ansible_host: 100.64.0.2   # Tailscale CGNAT IP
           ansible_user: ubuntu
           ansible_ssh_private_key_file: /root/.ssh/oci_mcp
           docker_api_acl: false
     lxc:
       hosts:
         ct121:
-          ansible_host: 192.168.0.124
+          ansible_host: 192.168.0.21
           ansible_user: root
         ct126:
-          ansible_host: 192.168.0.126
+          ansible_host: 192.168.0.22
           ansible_user: leila
           ssh_permit_root_login: "no"
         ct142:
-          ansible_host: 192.168.0.142
+          ansible_host: 192.168.0.23
           ansible_user: root
           extra_routes:  # n8n needs to reach A1 (mcp-a1) over Tailscale via the orangepi subnet router
             - dest: 100.64.0.0/10
-              via: 192.168.0.183
+              via: 192.168.0.14
         ct146:
-          ansible_host: 192.168.0.146
+          ansible_host: 192.168.0.24
           ansible_user: root
     others:
       hosts:
         orangepi:
-          ansible_host: 192.168.0.183
+          ansible_host: 192.168.0.14
           ansible_user: orangepi
           ssh_hardening: false

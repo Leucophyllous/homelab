@@ -4,10 +4,10 @@ set -a; . /root/scripts/.env; set +a
 HC=$(awk '$1=="restore-test"{print $2}' /root/scripts/hc-urls.txt)
 ORDER=(112 121 126)
 STATE=/var/lib/restore-test.idx
-N=192.168.0.100
+N={{ hostvars['pve02'].ansible_host }}
 R(){ ssh -o BatchMode=yes -o ConnectTimeout=10 root@$N "$@"; }
 tg(){ curl -s -m15 -o /dev/null --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$1" "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"; }
-if [ -n "$1" ]; then vmid=$1; rot=0; else i=$(( ($(cat $STATE 2>/dev/null || echo -1) + 1) % ${#ORDER[@]} )); vmid=${ORDER[$i]}; rot=1; fi
+if [ -n "$1" ]; then vmid=$1; rot=0; else i=$(( ($(cat $STATE 2>/dev/null || echo -1) + 1) % {{ "${#ORDER[@]}" }} )); vmid=${ORDER[$i]}; rot=1; fi
 tid=$((9000+vmid))
 curl -fsS -m10 -o /dev/null "$HC/start" || true
 vol=$(pvesm list backup-storage --content backup --vmid $vmid 2>/dev/null | awk 'NR>1{print $1}' | sort | tail -1)

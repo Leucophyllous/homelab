@@ -12,11 +12,11 @@ dfp(){ awk 'NR>1{gsub("%","",$5); print $6, $5}'; }
   echo "pve:thin-data $(lvs --noheadings -o data_percent pve/data | awk '{printf "%d",$1}')"
   zpool list -H -o name,cap | awk '{gsub("%","",$2); print "pve:zfs-"$1, $2}'
   for id in $(pct list | awk 'NR>1 && $2=="running"{print $1}'); do pct exec $id -- df -P / 2>/dev/null | dfp | sed "s/^/ct$id:/"; done
-  ssh $O 192.168.0.100 'df -P / | awk "NR>1{gsub(\"%\",\"\",\$5); print \$6, \$5}"; echo "thin-data $(lvs --noheadings -o data_percent pve/data | awk "{printf \"%d\",\$1}")"; zpool list -H -o name,cap | awk "{gsub(\"%\",\"\",\$2); print \"zfs-\"\$1, \$2}"' | sed 's/^/pve02:/'
-  ssh $O orangepi@192.168.0.183 'df -P / /mnt/hdd-a /mnt/hdd-b /mnt/hdd-c' | dfp | sed 's/^/orangepi:/'
-  for h in docker-vm:192.168.0.113; do ssh $O leila@${h#*:} 'df -P /' | dfp | sed "s/^/${h%%:*}:/"; done
-  ssh $O root@192.168.0.243 'df -P /' | dfp | sed 's/^/pi:/'
-  ssh $O -i /root/.ssh/oci_mcp ubuntu@100.69.245.48 'df -P /' | dfp | sed 's/^/mcp-a1:/'
+  ssh $O {{ hostvars['pve02'].ansible_host }} 'df -P / | awk "NR>1{gsub(\"%\",\"\",\$5); print \$6, \$5}"; echo "thin-data $(lvs --noheadings -o data_percent pve/data | awk "{printf \"%d\",\$1}")"; zpool list -H -o name,cap | awk "{gsub(\"%\",\"\",\$2); print \"zfs-\"\$1, \$2}"' | sed 's/^/pve02:/'
+  ssh $O orangepi@{{ hostvars['orangepi'].ansible_host }} 'df -P / /mnt/hdd-a /mnt/hdd-b /mnt/hdd-c' | dfp | sed 's/^/orangepi:/'
+  for h in docker-vm:{{ hostvars['docker-vm'].ansible_host }}; do ssh $O leila@${h#*:} 'df -P /' | dfp | sed "s/^/${h%%:*}:/"; done
+  ssh $O root@{{ hostvars['pi'].ansible_host }} 'df -P /' | dfp | sed 's/^/pi:/'
+  ssh $O -i /root/.ssh/oci_mcp ubuntu@{{ hostvars['mcp-a1'].ansible_host }} 'df -P /' | dfp | sed 's/^/mcp-a1:/'
 } > "$tmp" 2>/dev/null
 over=""; while read -r k v; do [ -z "$v" ] && continue; t=${TH[$k]:-$DEFAULT}; [ "$v" -ge "$t" ] && over+="$k ${v}% (しきい値${t}%)"$'\n'; done < "$tmp"
 over=${over%$'\n'}

@@ -196,7 +196,12 @@
     mode: "{{ item.m }}"
   loop:
     - { s: pct-any, d: /usr/local/sbin/pct-any, m: "0755" }
-    - { s: update-report.sh, d: /root/scripts/update-report.sh, m: "0700" }
+
+- name: update-report.sh (templated, embeds other hosts' LAN/Tailscale IPs)
+  ansible.builtin.template:
+    src: update-report.sh.j2
+    dest: /root/scripts/update-report.sh
+    mode: "0700"
 
 - name: mc failover onboot helper
   ansible.builtin.copy:
@@ -276,7 +281,7 @@
 
 - name: known peer host keys for cross-host ssh hops
   ansible.builtin.shell: |
-    for h in 192.168.0.113 192.168.0.142 192.168.0.146 192.168.0.150 192.168.0.100 192.168.0.183 192.168.0.243 100.69.245.48; do
+    for h in {{ [hostvars['docker-vm'].ansible_host, hostvars['ct142'].ansible_host, hostvars['ct146'].ansible_host, hostvars['pve'].ansible_host, hostvars['pve02'].ansible_host, hostvars['orangepi'].ansible_host, hostvars['pi'].ansible_host, hostvars['mcp-a1'].ansible_host] | join(' ') }}; do
       ssh-keyscan -t rsa,ed25519 -T 3 $h 2>/dev/null
     done > /tmp/khnew
     touch /root/.ssh/known_hosts
