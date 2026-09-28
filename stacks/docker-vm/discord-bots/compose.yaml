@@ -5,16 +5,8 @@ x-logging: &logging
     max-file: "3"
 
 services:
-  everyone-bot:
-    build: .
-    image: local/discord-bots:1
-    container_name: everyone-bot
-    restart: unless-stopped
-    env_file: everyone-bot/.env
-    volumes:
-      - ./everyone-bot/bot.py:/app/bot.py:ro
-    logging: *logging
   wol-bot:
+    build: .
     image: local/discord-bots:1
     container_name: wol-bot
     restart: unless-stopped
@@ -25,15 +17,4 @@ services:
     env_file: wol-bot/.env
     volumes:
       - ./wol-bot/bot.py:/app/bot.py:ro
-    logging: *logging
-  rolepanel-bot:
-    image: local/discord-bots:1
-    container_name: rolepanel-bot
-    restart: unless-stopped
-    env_file: rolepanel-bot/.env
-    environment:
-      DB_PATH: /app/data/rolepanel.db
-    volumes:
-      - ./rolepanel-bot/bot.py:/app/bot.py:ro
-      - ./rolepanel-bot/data:/app/data
     logging: *logging

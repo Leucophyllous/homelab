@@ -203,13 +203,6 @@
     dest: /root/scripts/update-report.sh
     mode: "0700"
 
-- name: mc failover onboot helper
-  ansible.builtin.copy:
-    src: mc-ct121-onboot
-    dest: /usr/local/sbin/mc-ct121-onboot
-    mode: "0755"
-  when: inventory_hostname == 'pve02'
-
 - name: vzdump healthchecks hook
   ansible.builtin.template:
     src: vzdump-hc.sh.j2
