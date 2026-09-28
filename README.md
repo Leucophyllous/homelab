@@ -28,7 +28,7 @@ flowchart LR
         mc["CT minecraft<br>Paper(Docker)+Geyser"]
       end
       subgraph pve02["pve02"]
-        dvm["VM docker-vm<br>Grafana/Prometheus/nut-exporter<br>Home Assistant / bots / ilust<br>Dockge (agent)"]
+        dvm["VM docker-vm<br>Grafana/Prometheus/nut-exporter<br>plug-exporter+matter-server / bots / ilust<br>Dockge (agent)"]
         nut["NUT (UPS、USB 接続)"]
       end
     end
@@ -98,7 +98,7 @@ flowchart LR
 
 | 種類 | 名前 | ホスト | 役割 |
 |---|---|---|---|
-| VM | docker-vm | pve02(固定) | Grafana・Prometheus・nut-exporter、Home Assistant、bot 類、ilust、Dockge(agent) |
+| VM | docker-vm | pve02(固定) | Grafana・Prometheus・nut-exporter、plug-exporter(Matter プラグの電力計測と ON/OFF)、bot 類、ilust、Dockge(agent) |
 | CT | n8n (ct142) | pve | n8n(ネイティブ、systemd)。監視自動修復・Discord Family Bot(`/fix`)の実行元 |
 | CT | ollama (ct146) | pve | Ollama(ネイティブ、qwen2.5:14b)。n8n の AI 診断フォールバック |
 | CT | minecraft (ct121) | pve | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ)。Paper 本体のみ Docker(itzg イメージ) |
@@ -111,11 +111,11 @@ flowchart LR
 | ホスト | スタック | 内容 |
 |---|---|---|
 | docker-vm | monitoring | nut-exporter、Prometheus、Grafana |
+| docker-vm | plugs | Matter プラグ(UPS 入力)の電力計測を Prometheus に出す plug-exporterと、その元になる matter-server。Telegram の `/plug` から ON/OFF |
 | docker-vm | dockge | Docker 管理 UI(agent、親機は A1) |
 | docker-vm | discord-bots | wol-bot(host network、自前イメージ) |
-| docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作をする bot |
+| docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作・プラグ操作をする bot |
 | docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
-| docker-vm | homeassistant | UPS の電力計測用(Grafana・Telegram への移行後に廃止予定) |
 | mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(軽量モデル) |
 | mcp-a1 | dockge | Docker 管理 UI(親機) |
 | pi | npm | Nginx Proxy Manager |
@@ -151,7 +151,7 @@ flowchart LR
 - **Discord Family Bot(n8n)**: 家族が Discord の `/fix` コマンドでサービスを選ぶと、Kuma Fix と同じホワイトリスト・復旧ロジックで自動修復を試み、Gemini(失敗時 Ollama)が結果を一言で説明してメッセージを更新する。署名検証(Ed25519)込みで n8n 単体で完結。
 - **AI 活動ログ(n8n)**: Gemini/Ollama の診断と、Kuma Fix・Discord Family Bot の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
-- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。電力の異常は2回連続で検知したときだけ通知する。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
+- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。電力の異常は2回連続で検知したときだけ通知する。電力・電圧・電流は Grafana で見、プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
 - **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎)、アプリと OS パッケージ(Native Update Check、毎日。取得エラーは3回連続で通知)、OCI 側のイメージ(毎週。ローカルビルドは対象外、取得失敗は2回連続で通知、同じ内容は14日間再通知しない)。反映はボタンか手動。
 - **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
@@ -208,4 +208,4 @@ docs/architecture.drawio      構成図(draw.io)
 - [mcp](https://github.com/Leucophyllous/mcp) - Claude 用 MCP サーバー(SSH / Proxmox / OCI / Proton Calendar)
 - [manmaru](https://github.com/Leucophyllous/manmaru) - 告知 bot
 - [quakebot](https://github.com/Leucophyllous/quakebot) / [everyone-bot](https://github.com/Leucophyllous/everyone-bot) / [rolepanel](https://github.com/Leucophyllous/rolepanel) - Discord bot 群
-- [ilust](https://github.com/Leucophyllous/ilust) / [media](https://github.com/Leucophyllous/media)
+- [ilust](https://github.com/Leucophyllous/manmaru) - ギャラリー
