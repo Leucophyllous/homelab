@@ -1,0 +1,28 @@
+services:
+  plug-exporter:
+    build: .
+    image: local/plug-exporter:1
+    container_name: plug-exporter
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  matter-server:
+    image: ghcr.io/home-assistant-libs/python-matter-server:stable
+    container_name: matter-server
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./matter-server-data:/data
+    environment:
+      - TZ=Asia/Tokyo
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
