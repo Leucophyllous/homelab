@@ -208,4 +208,4 @@ docs/architecture.drawio      構成図(draw.io)
 - [mcp](https://github.com/Leucophyllous/mcp) - Claude 用 MCP サーバー(SSH / Proxmox / OCI / Proton Calendar)
 - [manmaru](https://github.com/Leucophyllous/manmaru) - 告知 bot
 - [quakebot](https://github.com/Leucophyllous/quakebot) / [everyone-bot](https://github.com/Leucophyllous/everyone-bot) / [rolepanel](https://github.com/Leucophyllous/rolepanel) - Discord bot 群
-- [ilust](https://github.com/Leucophyllous/manmaru) - ギャラリー
+- [ilust](https://github.com/Leucophyllous/ilust) / [media](https://github.com/Leucophyllous/media)
