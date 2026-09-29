@@ -27,7 +27,7 @@ flowchart LR
         mc["CT minecraft<br>Paper(Docker)+Geyser"]
       end
       subgraph pve02["pve02"]
-        dvm["VM docker-vm<br>Grafana/Prometheus/nut-exporter<br>plug-exporter+matter-server / bots / ilust<br>Dockge (agent)"]
+        dvm["VM docker-vm<br>plug-exporter+matter-server / bots / ilust<br>Dockge (agent)"]
         nut["NUT (UPS、USB 接続)"]
       end
     end
@@ -59,6 +59,8 @@ flowchart LR
   qd -.-> cluster
   cluster -->|vzdump| bs
   n8n -->|通知| tg
+  n8n -.->|UPS 状態| nut
+  n8n -.->|電力| dvm
   cluster -->|Proxmox 通知| tg
   n8n -->|AI 診断・説明| gem
   n8n -.->|予備| oll2
@@ -76,7 +78,7 @@ flowchart LR
 - **しばらく触れなくても動き続ける**: セキュリティ更新は自動、壊れたら自動で再起動・通知、止まったことに外から気づける。
 - **作り直せる**: 設定は Ansible、サービスは compose / Dockerfile にしておき、データはバックアップから戻す。
 - **1サービス1つだけ**: 予備のコンテナ・予備のサーバー・自動フェイルオーバーは持たない。各ホスト(pve・pve02・Raspberry Pi・OrangePi)は単独で動き続け、壊れたら通知してバックアップから戻す。クラスタは管理の一元化とライブマイグレーションのために維持する。
-- **監視は通知中心**: 異常や警告の段階で Telegram に届ける。node_exporter・cAdvisor・ダッシュボードは持たず、Grafana は UPS の電力表示だけに使う。
+- **監視は n8n と通知中心**: 異常や警告の段階で Telegram に届ける。Grafana・Prometheus・node_exporter などの常駐の可視化基盤は持たず、見たいときはコンソールから確認する。
 - **重い/常駐の仕事は Proxmox ネイティブ(CT/VM)、Docker は軽い層に限定**: pve 自体には Docker を置かず、CT で n8n・Ollama をネイティブに動かす。Docker はハードウェア直結でない層をまとめて `docker-vm`(pve02 固定)1台に集約する。マイクラの Paper だけは「更新のしやすさ」を優先して CT 内に Docker をネストする例外。
 - **プライベートな Git ホストは持たない**: GitHub の非公開リポジトリのみを使い、A1 の `git-mirror-backup` が全リポジトリを bundle 化してオフサイト(OrangePi/Google Drive)に退避する。
 
@@ -94,7 +96,7 @@ flowchart LR
 
 | 種類 | 名前 | ホスト | 役割 |
 |---|---|---|---|
-| VM | docker-vm | pve02(固定) | Grafana・Prometheus・nut-exporter、plug-exporter(Matter プラグの電力計測と ON/OFF)、bot 類、ilust、Dockge(agent) |
+| VM | docker-vm | pve02(固定) | plug-exporter(Matter プラグの電力取得と ON/OFF)、bot 類、ilust、Dockge(agent) |
 | CT | n8n (ct142) | pve | n8n(ネイティブ、systemd)。監視・自動修復・通知の実行元 |
 | CT | ollama (ct146) | pve | Ollama(ネイティブ、qwen2.5:14b)。n8n の AI 診断フォールバック |
 | CT | minecraft (ct121) | pve | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ)。Paper 本体のみ Docker(itzg イメージ) |
@@ -106,8 +108,7 @@ flowchart LR
 
 | ホスト | スタック | 内容 |
 |---|---|---|
-| docker-vm | monitoring | nut-exporter、Prometheus、Grafana |
-| docker-vm | plugs | Matter プラグ(UPS 入力)の電力計測を Prometheus に出す plug-exporterと、その元になる matter-server。Telegram の `/plug` から ON/OFF |
+| docker-vm | plugs | Matter プラグ(UPS 入力)の電力を返す plug-exporterと、その元になる matter-server。n8n の UPS 異常チェックが電力を取得し、Telegram の `/plug` から ON/OFF |
 | docker-vm | dockge | Docker 管理 UI(agent、親機は A1) |
 | docker-vm | discord-bots | wol-bot(host network、自前イメージ) |
 | docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作・プラグ操作をする bot |
@@ -148,7 +149,7 @@ flowchart LR
 - **Kuma Fix(n8n)**: 通知の「修正」ボタンから、監視ごとに決めた固定の復旧コマンド(`docker restart` など)を実行して再確認する。
 - **AI 活動ログ(n8n)**: Gemini/Ollama の診断と Kuma Fix の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
-- **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。電力の異常は2回連続で検知したときだけ通知する。電力・電圧・電流は Grafana で見、プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
+- **UPS(n8n の UPS Power Anomaly Check、15分毎)**: UPS の状態(バッテリー運転 OB・残量低下 LB・交換要求 RB)を pve02 の NUT に直接問い合わせ、変化したときだけ通知する。消費電力は plug-exporter から直接読み、過去7日分の値を n8n 内に貯めて平均・標準偏差から異常を検知する(2回連続で通知、履歴が2日分たまるまでは電力の異常検知を待機、vzdump の時間帯は除外)。プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
 - **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
 - **ホスト状態(health-check)**: 10分毎に、全ホストと CT のメモリ空き・負荷・温度、pve/pve02 の SMART、Docker コンテナの異常(停止・unhealthy・再起動ループ)、A1 のメモリ使用率(OCI の回収基準に近づいたとき)を確認し、2回連続で異常なら Telegram に通知する。解消したときも1通送る。exporter を各ホストに入れず、pve から SSH で読むだけにしている。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎)、アプリと OS パッケージ(Native Update Check、毎日。取得エラーは3回連続で通知)、OCI 側のイメージ(毎週。ローカルビルドは対象外、取得失敗は2回連続で通知、同じ内容は14日間再通知しない)。反映はボタンか手動。
