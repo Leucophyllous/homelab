@@ -30,6 +30,7 @@ flowchart TB
       oll2["CT Ollama 14b<br>AI 診断の予備"]
       mc["CT Minecraft<br>Paper + Geyser"]
       vpn["CT vpn-lab"]
+      bp["backup-pve02 (NFS)<br>pve02 専用の vzdump 先"]
     end
     subgraph pve02["pve02 (ノート PC / Proxmox)"]
       direction TB
@@ -60,7 +61,7 @@ flowchart TB
   npm --> n8n
   npm --> dvm
   pve -->|vzdump| bs
-  pve02 -->|vzdump| bs
+  pve02 -->|vzdump| bp
   dk -.->|agent| dvm
   mcp -.->|Tailscale| pve
   pi ~~~ pve
@@ -69,7 +70,7 @@ flowchart TB
 | 場所 | 役割 |
 |---|---|
 | Raspberry Pi | 入口のリバースプロキシと、クラスタの定足数(QDevice)。A1 への Tailscale サブネットルーターもここ1台 |
-| pve | 監視の頭脳(n8n)、AI の予備、Minecraft。重い常駐処理は CT でネイティブに動かす |
+| pve | 監視の頭脳(n8n)、AI の予備、Minecraft。重い常駐処理は CT でネイティブに動かす。pve02 専用の vzdump の受け口(NFS)も持つ |
 | pve02 | Docker をまとめた VM(docker-vm)と、UPS を USB でつなぐ NUT の主 |
 | OrangePi | NAS とバックアップ置き場(NFS) |
 | OCI A1 | 外から呼ばれるもの(MCP・メール集約・家族向け Web)と Dockge の親機 |
@@ -115,16 +116,19 @@ flowchart LR
 ```mermaid
 flowchart LR
   subgraph src["バックアップ元"]
-    g["全ゲスト<br>(VM / CT)"]
+    g["pve のゲスト<br>(CT)"]
+    g2["pve02 のゲスト<br>(docker-vm)"]
     cfg["各ホストの設定<br>スクリプト / Ansible"]
     mcw["Minecraft ワールド"]
     gmr["GitHub 全リポジトリ<br>(bundle)"]
   end
   bs["backup-storage<br>OrangePi (NFS)<br>直近の世代だけ保持"]
+  bp["backup-pve02<br>pve のディスク (NFS)<br>keep-daily 3 / weekly 2"]
   s3["OCI Object Storage<br>restic (毎日 06:00)<br>daily 7 / weekly 4 / monthly 6"]
   gd["Google Drive<br>暗号化 (rclone crypt / 7z)<br>旧世代・廃止分の保管"]
 
   g -->|"vzdump 04:00"| bs
+  g2 -->|"vzdump 04:00"| bp
   cfg -->|"03:00"| bs
   mcw -->|"05:30 → 02:00 ミラー"| bs
   bs -->|"host-config / vm-data"| s3
@@ -148,7 +152,7 @@ flowchart LR
   subgraph pvebox["pve のスクリプト"]
     direction TB
     hcx["health-check (10 分毎)<br>全ホストのメモリ / 負荷 / 温度 /<br>Docker / SMART を SSH で確認<br>Drive退避・構成のずれの最終成功日も確認"]
-    cap["容量監視 (毎時)"]
+    cap["容量監視 (毎時)<br>バックアップ先への書き込みも確認"]
     drift["構成のずれ (週 1)<br>Ansible 試走"]
   end
   pvn["Proxmox 通知<br>警告 / エラー / フェンス"]
@@ -179,7 +183,7 @@ flowchart LR
 
 | ホスト | 役割 |
 |---|---|
-| pve | Proxmox ノード(デスクトップ機)。n8n・Ollama・Minecraft を CT で動かす |
+| pve | Proxmox ノード(デスクトップ機)。n8n・Ollama・Minecraft を CT で動かす。pve02 専用の vzdump の受け口(NFS)を出す |
 | pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm)、UPS を USB でつなぐ NUT サーバー |
 | Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice、Tailscale のサブネットルーター |
 | OrangePi 5 Plus | NAS、バックアップ置き場、UPS イベントの Telegram 通知(NUT の従) |
@@ -216,7 +220,7 @@ flowchart LR
 
 - **自動フェイルオーバーはしない**: Proxmox HA と ZFS レプリケーションは使わない。ホストが落ちたら通知が飛び、vzdump のバックアップから戻す。pve02 を作り直すときは、docker-vm を vzdump で退避してから復元する(`rebuild-pve02.sh`)。
 - **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つので、残った側でクラスタ操作ができる。
-- **バックアップ置き場が止まったとき**: backup-storage(NFS)は `soft` マウント。OrangePi が落ちていても pve/pve02 の操作はハングせず、その間の vzdump だけが失敗として通知される。
+- **バックアップ置き場が止まったとき**: backup-storage(NFS)は `soft` マウント。OrangePi が落ちていても pve/pve02 の操作はハングせず、その間の pve のゲストの vzdump だけが失敗として通知される。pve02 の docker-vm は OrangePi を使わない(pve のディスクにある backup-pve02 へ保存)ので、OrangePi が止まっても影響を受けない。逆に pve が落ちると docker-vm の最新の vzdump を取り出せないが、オフサイトと直前世代は残る。
 - **停電**: UPS は pve02 に USB でつなぎ、pve02 の NUT が主として監視する(pve・OrangePi・Raspberry Pi は従)。バッテリー運転が続くと pve02(5分)・pve(6分)が停止し、主がいなくなった時点で従も停止する。USB が抜けて NUT が古い値を返し続ける状態は、healthchecks.io の `ups-usb`(5分毎)で検知する。
 - **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、CT の Ollama(14b、常駐)が予備。両方ダメでも通知自体は届く。
 - **A1 のアイドル回収**: OCI の Always Free は使用率が低い状態が続くと回収されることがある(CPU・ネットワーク・メモリがすべて 20% 未満)。回収前の警告メールは公式には約束されていないため、自前で守る。A1 の軽量 Ollama(1.5b と 3b)はモデルを常駐させてメモリ使用率を 40% 前後に保つ役を兼ね、30% を下回ると `health-check` が警告する。外すなら先に Pay As You Go へ切り替える(無料枠内なら 0 円で回収の対象外になる)。
@@ -230,13 +234,16 @@ flowchart LR
 | 03:15 | OrangePi の設定 | backup-storage |
 | 03:30 | GitHub 全リポジトリのミラー bundle 化(A1) | OrangePi 経由でオフサイト |
 | 03:30 | NAS 共有のミラー(コピー元が未マウントなら中止) | backup-storage |
-| 04:00 | 全ゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2、n8n/Ollama の CT も対象) | backup-storage |
+| 04:00 | pve のゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2、n8n/Ollama の CT も対象) | backup-storage |
+| 04:00 | pve02 のゲスト(docker-vm)の vzdump(同じ保持) | backup-pve02(pve のディスク) |
 | 05:30 | Minecraft ワールド(30日分) | pve ローカル → ミラー |
 | 06:00 | restic によるオフサイトバックアップ(daily 7・weekly 4・monthly 6) | OCI Object Storage |
 | 日曜 08:00 | 旧世代の Drive 退避(下記) | Google Drive |
 
 - 各ジョブは healthchecks.io に開始・成功・失敗を送る。**失敗したときも、そもそも動かなかったときも**外から検知できる。
-- **旧世代と廃止分は Google Drive へ退避する**: 各ゲストの最新1世代だけを backup-storage に残し、それより古い vzdump・Minecraft の古いワールド・廃止したスタックのアーカイブは、暗号化(rclone crypt。単体のアーカイブはパスワード付き 7z、AES-256・ファイル名も暗号化)して Drive に送る。転送後にハッシュを照合し、一致したものだけ元を削除する(失敗したら元は残す)。
+- **vzdump の保存先は2つ**: pve のゲストは OrangePi の backup-storage、pve02 の docker-vm は pve のディスク(NFS で pve02 から書く backup-pve02)。ストレージ登録とバックアップジョブは Proxmox のクラスタ設定(`/etc/pve`)にあり、Ansible は触らない。有効なジョブはノードごとに1つずつ(pve → backup-storage、pve02 → backup-pve02)。pve 側の NFS 受け口は Ansible(pve_host)で作る。
+- **バックアップ先に書けないときは見逃さない**: 各ホストの設定バックアップは未マウント・書き込み不可・tar 失敗で失敗終了して healthchecks に失敗を送り、容量監視は毎時 pve/pve02 から backup-storage・backup-pve02 への書き込みを確かめて、できなければ Telegram に通知する(NFS の許可リストのずれを含む)。
+- **旧世代と廃止分は Google Drive へ退避する**: 各ゲストの最新1世代だけを backup-storage に残し、それより古い vzdump・Minecraft の古いワールド・廃止したスタックのアーカイブは、暗号化(rclone crypt。単体のアーカイブはパスワード付き 7z、AES-256・ファイル名も暗号化)して Drive に送る。転送後にハッシュを照合し、一致したものだけ元を削除する(失敗したら元は残す)。「最新世代」の判定は、本体・`.log`・`.notes` を同じ世代とみなして行う(`.notes` を別の世代と誤認すると、最新の本体まで退避してしまう)。
 - **Drive 退避は毎週日曜 08:00 に自動実行**する(`gd-archive`)。Drive 側の保持は vzdump 90日・Minecraft 180日で、それより古いものは自動で消える。成功が9日以上ないと `health-check` が警告する。完了と失敗は Telegram に届く。
 - 廃止したゲストは最終ダンプを1つだけ残し、同じ方法で Google Drive にも保管する。
 
@@ -247,7 +254,7 @@ flowchart LR
 - **AI 活動ログ(n8n)**: Gemini/Ollama の診断と Kuma Fix の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
 - **UPS(n8n の UPS Power Anomaly Check、15分毎)**: UPS の状態(バッテリー運転 OB・残量低下 LB・交換要求 RB)を pve02 の NUT に直接問い合わせ、変化したときだけ通知する。消費電力は plug-exporter から直接読み、過去7日分の値を n8n 内に貯めて平均・標準偏差から異常を検知する(2回連続で通知、履歴が2日分たまるまでは電力の異常検知を待機、vzdump の時間帯は除外)。プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
-- **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
+- **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。あわせてバックアップ先(backup-storage・backup-pve02)への書き込みも確かめる。
 - **ホスト状態(health-check)**: 10分毎に、全ホストと CT のメモリ空き・負荷・温度、pve/pve02 の SMART、Docker コンテナの異常(停止・unhealthy・再起動ループ)、A1 のメモリ使用率(30% を下回って OCI の回収基準に近づいたとき)、Drive 退避と構成のずれ検知の最終成功日(9日以上前)を確認し、2回連続で異常なら Telegram に通知する。解消したときも1通送る。exporter を各ホストに入れず、pve から SSH で読むだけにしている。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎。全件失敗や接続できないホストがあれば通知)、アプリと OS パッケージ(Native Update Check、毎日。取得エラーは3回連続で通知)、OCI 側のイメージ(毎週。ローカルビルドは対象外、取得失敗は2回連続で通知、同じ内容は14日間再通知しない)。反映はボタンか手動。
 - **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
@@ -271,8 +278,8 @@ ansible-playbook fetch-stacks.yml
 | common | タイムゾーン、ロケール、セキュリティ更新の自動適用、SSH の硬化 |
 | lxc | wait-online のマスク、SSH は常駐型に統一、Tailscale 帯を Pi 経由にする静的ルート(`extra_routes`) |
 | docker | `daemon.json`(ログの上限・MTU)、Docker API の ACL(`acl_allow` に n8n と bot の送信元を並べる) |
-| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、Drive 退避と構成のずれ検知のジョブ、NUT(`nut_primary` のホストが主、他は従)、クロスホスト SSH 用の known_hosts 配布 |
-| orangepi | NUT の従設定とバッテリーイベント通知、設定の日次バックアップ |
+| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、Drive 退避と構成のずれ検知のジョブ、pve02 専用の vzdump 受け口(NFS、pve のみ)、NUT(`nut_primary` のホストが主、他は従)、クロスホスト SSH 用の known_hosts 配布 |
+| orangepi | NUT の従設定とバッテリーイベント通知、設定の日次バックアップ、backup-storage の NFS 許可リスト(pve/pve02 のアドレスから生成) |
 | oci_host | mcp-a1(MCP サーバー・メール同期)の死活監視と自己修復 |
 
 新しいサーバーは、インベントリに追加して `site.yml` を流せば共通の設定が入る。作り直すときは `stacks/` からスタックを置き、データをバックアップから戻す。
@@ -303,4 +310,4 @@ ansible/                      ロール、site.yml、インベントリの見本
 - [mcp](https://github.com/Leucophyllous/mcp) - Claude 用 MCP サーバー(SSH / Proxmox / OCI / Proton Calendar)
 - [manmaru](https://github.com/Leucophyllous/manmaru) - 告知 bot
 - [quakebot](https://github.com/Leucophyllous/quakebot) / [everyone-bot](https://github.com/Leucophyllous/everyone-bot) / [rolepanel](https://github.com/Leucophyllous/rolepanel) - Discord bot 群
-- [ilust](https://github.com/Leucophyllous/ilust) / [media](https://github.com/Leucophyllous/media)
+- [ilust](https://github.com/Leucophyllous/homelab) / [media](https://github.com/Leucophyllous/media)
