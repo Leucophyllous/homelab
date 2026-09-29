@@ -22,6 +22,35 @@
   loop: [capacity-check.sh, offsite-backup.sh, restore-test.sh]
   when: inventory_hostname == 'pve'
 
+- name: pve-only /etc/exports.d present
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    mode: "0755"
+  when: inventory_hostname == 'pve'
+
+- name: pve-only NFS export of the pve02 backup area (pve02's own vzdump target; only pve02 and pve may mount it)
+  ansible.builtin.template:
+    src: backup-pve02.exports.j2
+    dest: /etc/exports.d/backup-pve02.exports
+    mode: "0644"
+  when: inventory_hostname == 'pve'
+  notify: reexport nfs
+
+- name: pve-only backup-pve02 directory present
+  ansible.builtin.file:
+    path: /mnt/nfs-share/backup-pve02
+    state: directory
+    mode: "0755"
+  when: inventory_hostname == 'pve'
+
+- name: pve-only nfs-server enabled
+  ansible.builtin.systemd_service:
+    name: nfs-server
+    enabled: true
+    state: started
+  when: inventory_hostname == 'pve'
+
 - name: pve-only sbin helpers present
   ansible.builtin.copy:
     src: "{{ item }}"
