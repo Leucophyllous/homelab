@@ -68,7 +68,7 @@ flowchart TB
 
 | 場所 | 役割 |
 |---|---|
-| Raspberry Pi | 入口のリバースプロキシと、クラスタの定足数(QDevice) |
+| Raspberry Pi | 入口のリバースプロキシと、クラスタの定足数(QDevice)。A1 への Tailscale サブネットルーターもここ1台 |
 | pve | 監視の頭脳(n8n)、AI の予備、Minecraft。重い常駐処理は CT でネイティブに動かす |
 | pve02 | Docker をまとめた VM(docker-vm)と、UPS を USB でつなぐ NUT の主 |
 | OrangePi | NAS とバックアップ置き場(NFS) |
@@ -108,7 +108,7 @@ flowchart LR
 
 - 外部に開いているのは HTTPS(Cloudflare 経由)と Minecraft の 2 ポートだけ。
 - 管理画面(n8n・Dockge・Proxmox など)は Cloudflare Access の裏に置く。
-- 自宅 LAN と A1 の間は Tailscale でつなぎ、LAN から A1 へ入る道はサブネットルーターを1台に決めておく(2台が同時にルーターを名乗ると、行きと帰りの経路がずれて通信が落ちる)。
+- 自宅 LAN と A1 の間は Tailscale でつなぎ、LAN から A1 へ入る道はサブネットルーターを1台(Raspberry Pi)に決めておく。2台が同時にルーターを名乗ると、行きと帰りの経路がずれて通信が落ち、監視が誤って赤くなる。LAN 内で A1 に用がある側(n8n の CT)は、Tailscale のアドレス帯を Pi 経由にする静的ルートを持つ。
 
 ### 3. バックアップの流れ
 
@@ -130,7 +130,7 @@ flowchart LR
   bs -->|"host-config / vm-data"| s3
   cfg -->|"/etc /root/scripts /root/ansible"| s3
   mcw -->|"最新 1 つ"| s3
-  bs ==>|"旧世代を転送 → ハッシュ照合 → 元を削除"| gd
+  bs ==>|"旧世代を転送 → ハッシュ照合 → 元を削除<br>(毎週日曜 08:00)"| gd
   gmr -->|"03:30"| gd
 ```
 
@@ -147,7 +147,7 @@ flowchart LR
   end
   subgraph pvebox["pve のスクリプト"]
     direction TB
-    hcx["health-check (10 分毎)<br>全ホストのメモリ / 負荷 / 温度 /<br>Docker / SMART を SSH で確認"]
+    hcx["health-check (10 分毎)<br>全ホストのメモリ / 負荷 / 温度 /<br>Docker / SMART を SSH で確認<br>Drive退避・構成のずれの最終成功日も確認"]
     cap["容量監視 (毎時)"]
     drift["構成のずれ (週 1)<br>Ansible 試走"]
   end
@@ -181,7 +181,7 @@ flowchart LR
 |---|---|
 | pve | Proxmox ノード(デスクトップ機)。n8n・Ollama・Minecraft を CT で動かす |
 | pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm)、UPS を USB でつなぐ NUT サーバー |
-| Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice |
+| Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice、Tailscale のサブネットルーター |
 | OrangePi 5 Plus | NAS、バックアップ置き場、UPS イベントの Telegram 通知(NUT の従) |
 | mcp-a1 (OCI A1) | MCP サーバー、メール集約、軽量 Ollama(1.5b と 3b を常駐。アイドル回収を避けるためメモリ使用率を保つ役も兼ねる)、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
 
@@ -202,14 +202,14 @@ flowchart LR
 | ホスト | スタック | 内容 |
 |---|---|---|
 | docker-vm | plugs | Matter プラグ(UPS 入力)の電力を返す plug-exporterと、その元になる matter-server。n8n の UPS 異常チェックが電力を取得し、Telegram の `/plug` から ON/OFF |
-| docker-vm | dockge | Docker 管理 UI(agent、親機は A1) |
+| docker-vm | dockge | Docker 管理 UI(agent、親機は A1)。Web コンソール有効 |
 | docker-vm | discord-bots | wol-bot(host network、自前イメージ) |
 | docker-vm | telegram-cmd-bot | Telegram から状態確認(`/status` `/ups` `/vms` `/containers` `/backup`)・更新操作・プラグ操作をする bot。UPS は NUT に直接問い合わせる |
 | docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
 | mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(軽量モデル2つを常駐。回収対策を兼ねる) |
-| mcp-a1 | dockge | Docker 管理 UI(親機)。docker-vm・minecraft-ct・raspberry-pi の Dockge を agent として1画面に集約(接続先は IP ではなくホスト名で登録し、画面上で名前が分かる) |
+| mcp-a1 | dockge | Docker 管理 UI(親機、Web コンソール有効)。docker-vm・minecraft-ct・raspberry-pi の Dockge を agent として1画面に集約(接続先は IP ではなくホスト名で登録し、画面上で名前が分かる) |
 | pi | npm | Nginx Proxy Manager |
-| pi | dockge | Docker 管理 UI(agent) |
+| pi | dockge | Docker 管理 UI(agent、Web コンソール有効) |
 | 各 Docker ホスト | docker-proxy | 更新チェック用の Docker API(送信元を ACL で限定。n8n と bot だけ許可) |
 
 ## 障害時の考え方
@@ -233,9 +233,11 @@ flowchart LR
 | 04:00 | 全ゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2、n8n/Ollama の CT も対象) | backup-storage |
 | 05:30 | Minecraft ワールド(30日分) | pve ローカル → ミラー |
 | 06:00 | restic によるオフサイトバックアップ(daily 7・weekly 4・monthly 6) | OCI Object Storage |
+| 日曜 08:00 | 旧世代の Drive 退避(下記) | Google Drive |
 
 - 各ジョブは healthchecks.io に開始・成功・失敗を送る。**失敗したときも、そもそも動かなかったときも**外から検知できる。
-- **旧世代と廃止分は Google Drive へ退避する**: 各ゲストの最新1世代だけを backup-storage に残し、それより古い vzdump・Minecraft の古いワールド・廃止したスタックのアーカイブは、暗号化(rclone crypt。単体のアーカイブはパスワード付き 7z、AES-256・ファイル名も暗号化)して Drive に送る。転送後にハッシュを照合し、一致したものだけ元を削除する(失敗したら元は残す)。現状は手動で実行している。
+- **旧世代と廃止分は Google Drive へ退避する**: 各ゲストの最新1世代だけを backup-storage に残し、それより古い vzdump・Minecraft の古いワールド・廃止したスタックのアーカイブは、暗号化(rclone crypt。単体のアーカイブはパスワード付き 7z、AES-256・ファイル名も暗号化)して Drive に送る。転送後にハッシュを照合し、一致したものだけ元を削除する(失敗したら元は残す)。
+- **Drive 退避は毎週日曜 08:00 に自動実行**する(`gd-archive`)。Drive 側の保持は vzdump 90日・Minecraft 180日で、それより古いものは自動で消える。成功が9日以上ないと `health-check` が警告する。完了と失敗は Telegram に届く。
 - 廃止したゲストは最終ダンプを1つだけ残し、同じ方法で Google Drive にも保管する。
 
 ## 監視と自動化
@@ -246,10 +248,10 @@ flowchart LR
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
 - **UPS(n8n の UPS Power Anomaly Check、15分毎)**: UPS の状態(バッテリー運転 OB・残量低下 LB・交換要求 RB)を pve02 の NUT に直接問い合わせ、変化したときだけ通知する。消費電力は plug-exporter から直接読み、過去7日分の値を n8n 内に貯めて平均・標準偏差から異常を検知する(2回連続で通知、履歴が2日分たまるまでは電力の異常検知を待機、vzdump の時間帯は除外)。プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
 - **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
-- **ホスト状態(health-check)**: 10分毎に、全ホストと CT のメモリ空き・負荷・温度、pve/pve02 の SMART、Docker コンテナの異常(停止・unhealthy・再起動ループ)、A1 のメモリ使用率(30% を下回って OCI の回収基準に近づいたとき)を確認し、2回連続で異常なら Telegram に通知する。解消したときも1通送る。exporter を各ホストに入れず、pve から SSH で読むだけにしている。
+- **ホスト状態(health-check)**: 10分毎に、全ホストと CT のメモリ空き・負荷・温度、pve/pve02 の SMART、Docker コンテナの異常(停止・unhealthy・再起動ループ)、A1 のメモリ使用率(30% を下回って OCI の回収基準に近づいたとき)、Drive 退避と構成のずれ検知の最終成功日(9日以上前)を確認し、2回連続で異常なら Telegram に通知する。解消したときも1通送る。exporter を各ホストに入れず、pve から SSH で読むだけにしている。
 - **更新チェック**: Docker イメージ(n8n の Image Update Check、6時間毎。全件失敗や接続できないホストがあれば通知)、アプリと OS パッケージ(Native Update Check、毎日。取得エラーは3回連続で通知)、OCI 側のイメージ(毎週。ローカルビルドは対象外、取得失敗は2回連続で通知、同じ内容は14日間再通知しない)。反映はボタンか手動。
 - **自前イメージの作り直し**: 毎月1日に土台のイメージを最新にしてビルドし直す。
-- **構成のずれ検知**: 毎週 Ansible を試走し、ずれや到達できないホストがあれば通知する。
+- **構成のずれ検知**: 毎週日曜 06:30 に Ansible を試走し、ずれや到達できないホストがあれば通知する。15分で打ち切ってその旨を通知し、最後に成功した日が9日以上前なら `health-check` が警告するので、黙って止まることはない。
 - **死活の外部確認**: n8n・MCP サーバー・メール同期・GitHub ミラー・UPS の USB 接続・ホスト状態チェックは healthchecks.io に定期的に報告する。止まったら外から分かる。
 
 ## 構成管理(Ansible)
@@ -267,9 +269,9 @@ ansible-playbook fetch-stacks.yml
 | ロール | 内容 |
 |---|---|
 | common | タイムゾーン、ロケール、セキュリティ更新の自動適用、SSH の硬化 |
-| lxc | wait-online のマスク、SSH は常駐型に統一 |
+| lxc | wait-online のマスク、SSH は常駐型に統一、Tailscale 帯を Pi 経由にする静的ルート(`extra_routes`) |
 | docker | `daemon.json`(ログの上限・MTU)、Docker API の ACL(`acl_allow` に n8n と bot の送信元を並べる) |
-| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、NUT(`nut_primary` のホストが主、他は従)、クロスホスト SSH 用の known_hosts 配布 |
+| pve_host | pve/pve02 ホスト自体の監視・バックアップ・電源/ネットワークの調整、Drive 退避と構成のずれ検知のジョブ、NUT(`nut_primary` のホストが主、他は従)、クロスホスト SSH 用の known_hosts 配布 |
 | orangepi | NUT の従設定とバッテリーイベント通知、設定の日次バックアップ |
 | oci_host | mcp-a1(MCP サーバー・メール同期)の死活監視と自己修復 |
 
@@ -278,7 +280,7 @@ ansible-playbook fetch-stacks.yml
 ## セキュリティ
 
 - 外部に公開しているのは HTTPS(Cloudflare 経由)と Minecraft の2ポートだけ。SSH は外部非公開。
-- リバースプロキシは Cloudflare からの接続だけを受け付け、オリジンへの直接アクセスは拒否する。管理画面(n8n・Dockge など)は Cloudflare Access で保護。
+- リバースプロキシは Cloudflare からの接続だけを受け付け、オリジンへの直接アクセスは拒否する。管理画面(n8n・Dockge など)は Cloudflare Access で保護。Dockge の Web コンソールは Access を通った利用者だけが使える。
 - MCP サーバーの公開ポートは、Anthropic の送信元アドレスからの接続だけに限定。
 - SSH はパスワード認証を無効化(一部のホストは運用上の理由で除外)。自動処理用の鍵は送信元とコマンドを限定する。
 - Docker API は送信元を ACL で限定し、IPv6 側は遮断。
