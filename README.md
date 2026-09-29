@@ -71,8 +71,6 @@ flowchart LR
   mcp -.->|Tailscale| cluster
 ```
 
-編集できる版は [`docs/architecture.drawio`](docs/architecture.drawio)(draw.io / diagrams.net で開く。現状の構成とは一部ずれている)。
-
 ## 設計方針
 
 - **しばらく触れなくても動き続ける**: セキュリティ更新は自動、壊れたら自動で再起動・通知、止まったことに外から気づける。
@@ -121,8 +119,9 @@ flowchart LR
 
 ## 障害時の考え方
 
-- **自動フェイルオーバーはしない**: Proxmox HA と ZFS レプリケーションは使わない。ホストが落ちたら通知が飛び、vzdump のバックアップから戻す。
+- **自動フェイルオーバーはしない**: Proxmox HA と ZFS レプリケーションは使わない。ホストが落ちたら通知が飛び、vzdump のバックアップから戻す。pve02 を作り直すときは、docker-vm を vzdump で退避してから復元する(`rebuild-pve02.sh`)。
 - **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つので、残った側でクラスタ操作ができる。
+- **バックアップ置き場が止まったとき**: backup-storage(NFS)は `soft` マウント。OrangePi が落ちていても pve/pve02 の操作はハングせず、その間の vzdump だけが失敗として通知される。
 - **停電**: UPS は pve02 に USB でつなぎ、pve02 の NUT が主として監視する(pve・OrangePi・Raspberry Pi は従)。バッテリー運転が続くと pve02(5分)・pve(6分)が停止し、主がいなくなった時点で従も停止する。USB が抜けて NUT が古い値を返し続ける状態は、healthchecks.io の `ups-usb`(5分毎)で検知する。
 - **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、CT の Ollama(14b、常駐)が予備。両方ダメでも通知自体は届く。
 
@@ -191,7 +190,6 @@ ansible-playbook fetch-stacks.yml
 ```
 stacks/<ホスト>/<スタック>/   compose.yaml、Dockerfile、requirements.txt
 ansible/                      ロール、site.yml、インベントリの見本
-docs/architecture.drawio      構成図(draw.io)
 .env.example                  compose が参照する変数の一覧
 ```
 
