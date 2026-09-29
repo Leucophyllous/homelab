@@ -32,7 +32,7 @@ xfer(){
 }
 
 l=$(mktemp)
-(cd $B/dump && ls -1 vzdump-* 2>/dev/null | awk '{s=$0; sub(/\.(log|notes|tar\.zst|vma\.zst|tar\.gz|tar\.lzo|vma)$/,"",s); sub(/\.tar$/,"",s); t=s; sub(/^vzdump-/,"",t); split(t,a,"-"); k=a[1]"-"a[2]; if(!(k in m)||s>m[k])m[k]=s; f[NR]=$0; st[NR]=s; kk[NR]=k} END{for(i=1;i<=NR;i++) if(st[i]!=m[kk[i]]) print f[i]}') > $l
+(cd $B/dump && ls -1 vzdump-* 2>/dev/null | awk '{s=$0; sub(/\.notes$/,"",s); sub(/\.log$/,"",s); sub(/\.(tar\.zst|vma\.zst|tar\.gz|tar\.lzo|vma|tar)$/,"",s); t=s; sub(/^vzdump-/,"",t); split(t,a,"-"); k=a[1]"-"a[2]; if(!(k in m)||s>m[k])m[k]=s; f[NR]=$0; st[NR]=s; kk[NR]=k} END{for(i=1;i<=NR;i++) if(st[i]!=m[kk[i]]) print f[i]}') > $l
 xfer nas-dump $B/dump $l
 
 (cd $B/minecraft-world && ls -1t world-* 2>/dev/null | tail -n +3) > $l
