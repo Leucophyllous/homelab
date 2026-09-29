@@ -10,7 +10,7 @@ tg(){ curl -s -m15 -o /dev/null --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --d
 if [ -n "$1" ]; then vmid=$1; rot=0; else i=$(( ($(cat $STATE 2>/dev/null || echo -1) + 1) % {{ "${#ORDER[@]}" }} )); vmid=${ORDER[$i]}; rot=1; fi
 tid=$((9000+vmid))
 curl -fsS -m10 -o /dev/null "$HC/start" || true
-vol=$(pvesm list backup-storage --content backup --vmid $vmid 2>/dev/null | awk 'NR>1{print $1}' | sort | tail -1)
+vol=""; for st in backup-pve02 backup-storage; do vol=$(pvesm list $st --content backup --vmid $vmid 2>/dev/null | awk 'NR>1{print $1}' | sort | tail -1); [ -n "$vol" ] && break; done
 cleanup(){ R "qm stop $tid --skiplock 1 >/dev/null 2>&1; qm destroy $tid --purge 1 >/dev/null 2>&1; pct stop $tid >/dev/null 2>&1; pct destroy $tid --purge 1 >/dev/null 2>&1; true"; }
 fail(){ cleanup; tg "🧪❌ 復元テスト失敗: ID$vmid ($1) ${vol##*/}"; curl -fsS -m10 -o /dev/null --data-raw "$vmid: $1" "$HC/fail"; exit 1; }
 [ -z "$vol" ] && fail "バックアップが見つからない"
