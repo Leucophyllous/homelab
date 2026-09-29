@@ -1,0 +1,5 @@
+[Unit]
+Description=Host health check (memory, load, temperature, SMART, containers) across homelab
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/health-check.sh
