@@ -23,6 +23,9 @@ wprobe='f=/mnt/pve/backup-storage/.wtest-$$; timeout 15 mountpoint -q /mnt/pve/b
 sh -c "$wprobe" >/dev/null 2>&1 || over+="pve から backup-storage に書き込めない(未マウントまたは NFS の許可ずれ)"$'\n'
 ssh $O {{ hostvars['pve02'].ansible_host }} "sh -c '$wprobe'" >/dev/null 2>&1; r=$?
 [ $r -ne 0 ] && [ $r -ne 255 ] && over+="pve02 から backup-storage に書き込めない(未マウントまたは NFS の許可ずれ)"$'\n'
+wprobe2=${wprobe//backup-storage/backup-pve02}
+ssh $O {{ hostvars['pve02'].ansible_host }} "sh -c '$wprobe2'" >/dev/null 2>&1; r=$?
+[ $r -ne 0 ] && [ $r -ne 255 ] && over+="pve02 から backup-pve02 に書き込めない(pve の NFS 受け口を確認)"$'\n'
 over=${over%$'\n'}
 prev=$(cat "$STATE" 2>/dev/null)
 if [ "$over" != "$prev" ]; then
