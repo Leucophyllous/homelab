@@ -40,7 +40,7 @@ flowchart LR
   subgraph oci["OCI A1"]
     mcp["MCP サーバー"]
     mail["Proton Bridge + mbsync"]
-    oll["Ollama (軽量、予備)"]
+    oll["Ollama (軽量、回収対策の常駐)"]
     dockge["Dockge (親機)"]
     gm["git-mirror-backup"]
   end
@@ -87,7 +87,7 @@ flowchart LR
 | pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm)、UPS を USB でつなぐ NUT サーバー |
 | Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice |
 | OrangePi 5 Plus | NAS、バックアップ置き場、UPS イベントの Telegram 通知(NUT の従) |
-| mcp-a1 (OCI A1) | MCP サーバー、メール集約、軽量 Ollama、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
+| mcp-a1 (OCI A1) | MCP サーバー、メール集約、軽量 Ollama(アイドル回収を避けるためメモリ使用率を保つ役も兼ねる)、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
 
 ## ゲスト
 
@@ -111,8 +111,8 @@ flowchart LR
 | docker-vm | discord-bots | wol-bot(host network、自前イメージ) |
 | docker-vm | telegram-cmd-bot | Telegram から状態確認・更新操作・プラグ操作をする bot |
 | docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
-| mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(軽量モデル) |
-| mcp-a1 | dockge | Docker 管理 UI(親機) |
+| mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(軽量モデル。回収対策の常駐を兼ねる) |
+| mcp-a1 | dockge | Docker 管理 UI(親機)。docker-vm・minecraft CT・Raspberry Pi の Dockge を agent として1画面に集約 |
 | pi | npm | Nginx Proxy Manager |
 | pi | dockge | Docker 管理 UI(agent) |
 | 各 Docker ホスト | docker-proxy | 更新チェック用の Docker API(送信元を ACL で限定) |
@@ -124,6 +124,7 @@ flowchart LR
 - **バックアップ置き場が止まったとき**: backup-storage(NFS)は `soft` マウント。OrangePi が落ちていても pve/pve02 の操作はハングせず、その間の vzdump だけが失敗として通知される。
 - **停電**: UPS は pve02 に USB でつなぎ、pve02 の NUT が主として監視する(pve・OrangePi・Raspberry Pi は従)。バッテリー運転が続くと pve02(5分)・pve(6分)が停止し、主がいなくなった時点で従も停止する。USB が抜けて NUT が古い値を返し続ける状態は、healthchecks.io の `ups-usb`(5分毎)で検知する。
 - **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、CT の Ollama(14b、常駐)が予備。両方ダメでも通知自体は届く。
+- **A1 のアイドル回収**: OCI の Always Free は使用率が低い状態が続くと回収されることがある(CPU・ネットワーク・メモリがすべて 20% 未満)。A1 の軽量 Ollama はモデルを常駐させてメモリ使用率を 20% 超に保つ役を兼ねるため、外すなら先に Pay As You Go へ切り替える(無料枠内なら 0 円で回収の対象外になる)。
 
 ## バックアップ
 
