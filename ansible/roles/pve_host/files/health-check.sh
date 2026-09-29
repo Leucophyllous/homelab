@@ -17,6 +17,8 @@ smart(){ local h=$1 d=$2 out=$3; [ -z "$out" ] && return 0; if echo "$out" | gre
   run docker-vm ssh $O leila@192.168.0.113 bash -s
   run mcp-a1 ssh $O -i /root/.ssh/oci_mcp ubuntu@100.69.245.48 bash -s
   pct exec 121 -- bash -c "$(cat $PROBE)" 2>/dev/null | sed "s/^/minecraft-ct /"
+  f=/var/lib/gd-archive.last; if [ -f $f ]; then echo "pve gdage $(( ($(date +%s)-$(stat -c %Y $f))/86400 ))"; fi
+  f=/var/lib/ansible-drift.last; if [ -f $f ]; then echo "pve driftage $(( ($(date +%s)-$(stat -c %Y $f))/86400 ))"; fi
   for d in /dev/sda /dev/sdb /dev/nvme0n1; do smart pve $d "$(smartctl -H $d 2>/dev/null)"; done
   smart pve02 /dev/sda "$(ssh $O 192.168.0.101 'smartctl -H /dev/sda' 2>/dev/null)"
 } > "$tmp"
@@ -28,11 +30,13 @@ while read -r h k v rest; do
     memfree)
       t=10; [ "$h" = pve ] && t=8
       [ "$v" -lt "$t" ] && add "$h:mem" "$h メモリ空き ${v}%"
-      [ "$h" = mcp-a1 ] && [ $((100-v)) -lt 23 ] && add "$h:idle" "$h メモリ使用率 $((100-v))% (OCI回収基準の20%に近い)"
+      [ "$h" = mcp-a1 ] && [ $((100-v)) -lt 30 ] && add "$h:idle" "$h メモリ使用率 $((100-v))% (OCI回収基準の20%に近い)"
       ;;
     load) awk -v a="$v" 'BEGIN{exit !(a>2)}' && add "$h:load" "$h 負荷 ${v}/コア" ;;
     temp) [ "$v" -ge 80 ] && add "$h:temp" "$h 温度 ${v}°C" ;;
     docker) add "$h:docker:$v" "$h コンテナ $v が異常 ($rest)" ;;
+    gdage) [ "$v" -ge 9 ] && add "$h:gdarchive" "Drive退避ジョブが ${v} 日間成功していない" ;;
+    driftage) [ "$v" -ge 9 ] && add "$h:drift" "構成のずれ検知(Ansible試走)が ${v} 日間実行されていない" ;;
     smart*) [ "$v" = NG ] && add "$h:$k" "$h SMART異常 ${k#smart}" ;;
   esac
 done < "$tmp"

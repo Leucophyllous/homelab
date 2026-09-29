@@ -1,0 +1,9 @@
+[Unit]
+Description=Move old backup generations to Google Drive (encrypted, verified)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/gd-archive.sh
+Nice=10
+IOSchedulingClass=idle

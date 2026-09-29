@@ -1,0 +1,6 @@
+[Unit]
+Description=Weekly Ansible drift check
+
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/ansible-drift.sh
