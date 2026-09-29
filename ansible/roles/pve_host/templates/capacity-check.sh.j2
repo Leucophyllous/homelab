@@ -19,6 +19,10 @@ dfp(){ awk 'NR>1{gsub("%","",$5); print $6, $5}'; }
   ssh $O -i /root/.ssh/oci_mcp ubuntu@{{ hostvars['mcp-a1'].ansible_host }} 'df -P /' | dfp | sed 's/^/mcp-a1:/'
 } > "$tmp" 2>/dev/null
 over=""; while read -r k v; do [ -z "$v" ] && continue; t=${TH[$k]:-$DEFAULT}; [ "$v" -ge "$t" ] && over+="$k ${v}% (しきい値${t}%)"$'\n'; done < "$tmp"
+wprobe='f=/mnt/pve/backup-storage/.wtest-$$; timeout 15 mountpoint -q /mnt/pve/backup-storage && timeout 15 touch $f && rm -f $f'
+sh -c "$wprobe" >/dev/null 2>&1 || over+="pve から backup-storage に書き込めない(未マウントまたは NFS の許可ずれ)"$'\n'
+ssh $O {{ hostvars['pve02'].ansible_host }} "sh -c '$wprobe'" >/dev/null 2>&1; r=$?
+[ $r -ne 0 ] && [ $r -ne 255 ] && over+="pve02 から backup-storage に書き込めない(未マウントまたは NFS の許可ずれ)"$'\n'
 over=${over%$'\n'}
 prev=$(cat "$STATE" 2>/dev/null)
 if [ "$over" != "$prev" ]; then

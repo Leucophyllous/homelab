@@ -1,12 +1,22 @@
 #!/bin/bash
 set -u
-DEST=/mnt/pve/backup-storage/host-config/{{ inventory_hostname }}
+B=/mnt/pve/backup-storage
+DEST=$B/host-config/{{ inventory_hostname }}
 LOG=/var/log/host-config-backup.log
-mkdir -p "$DEST"
+fail(){ echo "=== $(date) ===" >> "$LOG"; echo "FAIL: $1" >> "$LOG"; exit 1; }
+timeout 20 mountpoint -q "$B" || fail "backup-storage not mounted"
+timeout 30 mkdir -p "$DEST" || fail "cannot create $DEST"
+timeout 30 touch "$DEST/.write-test" || fail "backup-storage not writable"
+rm -f "$DEST/.write-test"
+rc=0
 {
   echo "=== $(date) ==="
   cd /etc && etckeeper commit "scheduled snapshot" >/dev/null 2>&1
-  tar czf "$DEST/etc-git.tar.gz.tmp" -C /etc .git && mv "$DEST/etc-git.tar.gz.tmp" "$DEST/etc-git.tar.gz"
-  tar czf "$DEST/root-scripts.tar.gz.tmp" -C /root --exclude='*.bak' $(cd /root && ls -d *.sh scripts ansible 2>/dev/null) && mv "$DEST/root-scripts.tar.gz.tmp" "$DEST/root-scripts.tar.gz"
-  echo "done: $?"
-} >> "$LOG" 2>&1
+  tar czf "$DEST/etc-git.tar.gz.tmp" -C /etc .git
+  t=$?; [ $t -le 1 ] && mv "$DEST/etc-git.tar.gz.tmp" "$DEST/etc-git.tar.gz" || exit 1
+  tar czf "$DEST/root-scripts.tar.gz.tmp" -C /root --exclude='*.bak' $(cd /root && ls -d *.sh scripts ansible 2>/dev/null)
+  t=$?; [ $t -le 1 ] && mv "$DEST/root-scripts.tar.gz.tmp" "$DEST/root-scripts.tar.gz" || exit 1
+  echo "done: ok"
+} >> "$LOG" 2>&1 || rc=$?
+[ $rc -ne 0 ] && echo "done: FAIL rc=$rc" >> "$LOG"
+exit $rc
