@@ -13,7 +13,6 @@
 flowchart LR
   user["利用者"] -->|HTTPS| cf["Cloudflare<br>DNS / Access"]
   user -->|Java / Bedrock| mc
-  fam["家族 (Discord)"] -->|/fix| bot
   claude["Claude"] -->|MCP| mcp
 
   subgraph home["自宅LAN"]
@@ -23,7 +22,7 @@ flowchart LR
     end
     subgraph cluster["Proxmox VE クラスタ"]
       subgraph pve["pve"]
-        n8n["CT n8n (native)<br>Discord Q&A bot も兼務"]
+        n8n["CT n8n (native)"]
         oll2["CT Ollama (14b, native)"]
         mc["CT minecraft<br>Paper(Docker)+Geyser"]
       end
@@ -48,7 +47,6 @@ flowchart LR
 
   subgraph saas["外部サービス"]
     tg["Telegram"]
-    bot["Discord Family Bot"]
     hc["healthchecks.io"]
     gem["Gemini API"]
     gd["Google Drive"]
@@ -60,8 +58,7 @@ flowchart LR
   npm --> n8n
   qd -.-> cluster
   cluster -->|vzdump| bs
-  n8n -->|通知 / bot| tg
-  n8n -->|Interactions| bot
+  n8n -->|通知| tg
   cluster -->|Proxmox 通知| tg
   n8n -->|AI 診断・説明| gem
   n8n -.->|予備| oll2
@@ -99,7 +96,7 @@ flowchart LR
 | 種類 | 名前 | ホスト | 役割 |
 |---|---|---|---|
 | VM | docker-vm | pve02(固定) | Grafana・Prometheus・nut-exporter、plug-exporter(Matter プラグの電力計測と ON/OFF)、bot 類、ilust、Dockge(agent) |
-| CT | n8n (ct142) | pve | n8n(ネイティブ、systemd)。監視自動修復・Discord Family Bot(`/fix`)の実行元 |
+| CT | n8n (ct142) | pve | n8n(ネイティブ、systemd)。監視・自動修復・通知の実行元 |
 | CT | ollama (ct146) | pve | Ollama(ネイティブ、qwen2.5:14b)。n8n の AI 診断フォールバック |
 | CT | minecraft (ct121) | pve | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ)。Paper 本体のみ Docker(itzg イメージ) |
 | CT | vpn-lab | pve | VPN 検証 |
@@ -148,8 +145,7 @@ flowchart LR
 
 - **Status Monitor(n8n)**: 1分毎に HTTP/TCP で各サービスを確認し、変化したときだけ Telegram に通知(AI 診断付き)。Cloudflare Access の裏にある管理画面は LAN 側を直接確認する。公開 URL・Tailscale 経由の監視は3回連続の失敗、LAN 内は2回連続で通知し、外部経路だけの一斉障害は1通にまとめる。`/maintenance 30m` で作業中の通知を止められる。
 - **Kuma Fix(n8n)**: 通知の「修正」ボタンから、監視ごとに決めた固定の復旧コマンド(`docker restart` など)を実行して再確認する。
-- **Discord Family Bot(n8n)**: 家族が Discord の `/fix` コマンドでサービスを選ぶと、Kuma Fix と同じホワイトリスト・復旧ロジックで自動修復を試み、Gemini(失敗時 Ollama)が結果を一言で説明してメッセージを更新する。署名検証(Ed25519)込みで n8n 単体で完結。
-- **AI 活動ログ(n8n)**: Gemini/Ollama の診断と、Kuma Fix・Discord Family Bot の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
+- **AI 活動ログ(n8n)**: Gemini/Ollama の診断と Kuma Fix の修復結果を、pve の `/root/scripts/ai-activity.log` に JSON Lines で1行ずつ集約する(`AI Activity Log` ワークフロー経由、週次ローテーション)。
 - **Proxmox の通知**: 警告・エラー・フェンス・root 宛てメール(smartd・ZFS)を Webhook で Telegram へ。
 - **UPS**: バッテリー運転・残量低下・交換要求・状態取得不可を通知。電力の異常は2回連続で検知したときだけ通知する。電力・電圧・電流は Grafana で見、プラグの ON/OFF は Telegram の `/plug`(実行前に確認)で行う。USB が抜けて値が古いまま止まる状態も、pve02 の `ups-usb-check`(5分毎)が healthchecks.io に知らせる。
 - **容量**: 毎時、全ホストと稼働中 CT のディスク・thin プール・ZFS の使用率を確認し、しきい値を超えたら通知。
