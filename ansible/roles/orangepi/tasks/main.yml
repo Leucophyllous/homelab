@@ -68,3 +68,10 @@
     dest: /etc/cron.d/orangepi-config-backup
     content: "15 3 * * * root /usr/local/sbin/orangepi-config-backup\n"
     mode: "0644"
+
+- name: NFS export of backup-storage (allow list follows the pve/pve02 addresses in the inventory)
+  ansible.builtin.template:
+    src: proxmox-ha.exports.j2
+    dest: /etc/exports.d/proxmox-ha.exports
+    mode: "0644"
+  notify: reexport nfs
