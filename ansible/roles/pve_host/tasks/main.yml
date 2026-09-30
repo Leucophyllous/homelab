@@ -11,7 +11,7 @@
     src: "{{ item }}"
     dest: "/root/scripts/{{ item }}"
     mode: "0700"
-  loop: [telegram-canary.sh, mc-backups-mirror.sh, health-check.sh, health-probe.sh, gd-archive.sh, ansible-drift.sh]
+  loop: [telegram-canary.sh, mc-backups-mirror.sh, health-check.sh, health-probe.sh, gd-archive.sh, ansible-drift.sh, hdd1-drive-mirror.sh]
   when: inventory_hostname == 'pve'
 
 - name: pve-only scripts present (templated, embed other hosts' LAN/Tailscale IPs)
@@ -80,6 +80,8 @@
     - pct-fstrim.service
     - gd-archive.service
     - gd-archive.timer
+    - hdd1-drive-mirror.service
+    - hdd1-drive-mirror.timer
     - ansible-drift.service
     - ansible-drift.timer
   when: inventory_hostname == 'pve'
@@ -90,7 +92,7 @@
     name: "{{ item }}"
     enabled: true
     state: started
-  loop: [capacity-check.timer, health-check.timer, offsite-backup.timer, restore-test.timer, telegram-canary.timer, mc-backups-mirror.timer, gd-archive.timer, ansible-drift.timer]
+  loop: [capacity-check.timer, health-check.timer, offsite-backup.timer, restore-test.timer, telegram-canary.timer, mc-backups-mirror.timer, gd-archive.timer, ansible-drift.timer, hdd1-drive-mirror.timer]
   when: inventory_hostname == 'pve'
 
 - name: pve-only pct-fstrim.timer enabled (pre-existing, points at the fixed service above)

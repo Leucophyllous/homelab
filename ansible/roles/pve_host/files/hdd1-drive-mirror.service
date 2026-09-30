@@ -1,0 +1,11 @@
+[Unit]
+Description=Mirror /mnt/hdd1 to Google Drive (encrypted, 14-day deleted-file retention)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/root/scripts/hdd1-drive-mirror.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=infinity
