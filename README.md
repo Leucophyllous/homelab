@@ -27,7 +27,6 @@ flowchart TB
     subgraph pve["pve (デスクトップ / Proxmox)"]
       direction TB
       n8n["CT n8n<br>監視・自動修復・通知"]
-      oll2["CT Ollama 14b<br>AI 診断の予備"]
       mc["CT Minecraft<br>Paper + Geyser"]
       vpn["CT vpn-lab"]
       bp["backup-pve02 (NFS)<br>pve02 専用の vzdump 先"]
@@ -48,7 +47,7 @@ flowchart TB
     direction LR
     mcp["MCP サーバー"]
     mail["メール集約<br>Proton Bridge + mbsync"]
-    oll["Ollama 1.5b + 3b<br>(回収対策で常駐)"]
+    oll["Ollama 7b + 3b<br>AI 診断の予備 / 回収対策で常駐"]
     dk["Dockge 親機"]
     gm["GitHub ミラー"]
     hp["homepage / 家族向け Web"]
@@ -70,10 +69,10 @@ flowchart TB
 | 場所 | 役割 |
 |---|---|
 | Raspberry Pi | 入口のリバースプロキシと、クラスタの定足数(QDevice)。A1 への Tailscale サブネットルーターもここ1台 |
-| pve | 監視の頭脳(n8n)、AI の予備、Minecraft。重い常駐処理は CT でネイティブに動かす。pve02 専用の vzdump の受け口(NFS)も持つ |
+| pve | 監視の頭脳(n8n)、Minecraft。重い常駐処理は CT でネイティブに動かす。pve02 専用の vzdump の受け口(NFS)も持つ |
 | pve02 | Docker をまとめた VM(docker-vm)と、UPS を USB でつなぐ NUT の主 |
 | OrangePi | NAS とバックアップ置き場(NFS) |
-| OCI A1 | 外から呼ばれるもの(MCP・メール集約・家族向け Web)と Dockge の親機 |
+| OCI A1 | 外から呼ばれるもの(MCP・メール集約・家族向け Web)、Dockge の親機、ローカル AI(Ollama) |
 
 ### 2. 外からの通信経路
 
@@ -147,7 +146,7 @@ flowchart LR
     sm["Status Monitor<br>1 分毎の HTTP / TCP"]
     ups["UPS Power Anomaly<br>15 分毎 (NUT + 電力)"]
     upd["更新チェック<br>Docker / OS / OCI"]
-    ai["AI 診断<br>Gemini → 失敗時 Ollama"]
+    ai["AI 診断<br>Gemini → 失敗時 A1 の Ollama"]
   end
   subgraph pvebox["pve のスクリプト"]
     direction TB
@@ -175,7 +174,8 @@ flowchart LR
 - **作り直せる**: 設定は Ansible、サービスは compose / Dockerfile にしておき、データはバックアップから戻す。
 - **1サービス1つだけ**: 予備のコンテナ・予備のサーバー・自動フェイルオーバーは持たない。各ホスト(pve・pve02・Raspberry Pi・OrangePi)は単独で動き続け、壊れたら通知してバックアップから戻す。クラスタは管理の一元化とライブマイグレーションのために維持する。
 - **監視は n8n と通知中心**: 異常や警告の段階で Telegram に届ける。Grafana・Prometheus・node_exporter などの常駐の可視化基盤は持たず、見たいときはコンソールから確認する。
-- **重い/常駐の仕事は Proxmox ネイティブ(CT/VM)、Docker は軽い層に限定**: pve 自体には Docker を置かず、CT で n8n・Ollama をネイティブに動かす。Docker はハードウェア直結でない層をまとめて `docker-vm`(pve02 固定)1台に集約する。マイクラの Paper だけは「更新のしやすさ」を優先して CT 内に Docker をネストする例外。
+- **重い/常駐の仕事は Proxmox ネイティブ(CT/VM)、Docker は軽い層に限定**: pve 自体には Docker を置かず、CT で n8n をネイティブに動かす。Docker はハードウェア直結でない層をまとめて `docker-vm`(pve02 固定)1台に集約する。マイクラの Paper だけは「更新のしやすさ」を優先して CT 内に Docker をネストする例外。
+- **ローカル AI は A1 の1か所だけ**: Ollama は A1 にだけ置き、n8n の AI 診断の予備と A1 の回収対策を兼ねる。
 - **プライベートな Git ホストは持たない**: GitHub の非公開リポジトリのみを使い、A1 の `git-mirror-backup` が全リポジトリを bundle 化してオフサイト(OrangePi/Google Drive)に退避する。
 - **速さと安定性が要るものだけローカル、それ以外は Drive**: 稼働中のデータと直近のバックアップだけを手元に置き、旧世代・廃止したものは暗号化して Google Drive に退避する。
 
@@ -183,11 +183,11 @@ flowchart LR
 
 | ホスト | 役割 |
 |---|---|
-| pve | Proxmox ノード(デスクトップ機)。n8n・Ollama・Minecraft を CT で動かす。pve02 専用の vzdump の受け口(NFS)を出す |
+| pve | Proxmox ノード(デスクトップ機)。n8n・Minecraft を CT で動かす。pve02 専用の vzdump の受け口(NFS)を出す |
 | pve02 | Proxmox ノード(ノートPC、SSD換装済み)。Docker ワークロードの本拠地(docker-vm)、UPS を USB でつなぐ NUT サーバー |
 | Raspberry Pi | リバースプロキシ(NPM)、クラスタの QDevice、Tailscale のサブネットルーター |
 | OrangePi 5 Plus | NAS、バックアップ置き場、UPS イベントの Telegram 通知(NUT の従) |
-| mcp-a1 (OCI A1) | MCP サーバー、メール集約、軽量 Ollama(1.5b と 3b を常駐。アイドル回収を避けるためメモリ使用率を保つ役も兼ねる)、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
+| mcp-a1 (OCI A1) | MCP サーバー、メール集約、Ollama(7b と 3b を常駐。n8n の AI 診断の予備と、アイドル回収を避けるためメモリ使用率を保つ役を兼ねる)、Dockge(親機)、cloudflared Tunnel、GitHub ミラーバックアップ、一部の家族向け Web サービス |
 
 ## ゲスト
 
@@ -195,13 +195,12 @@ flowchart LR
 |---|---|---|---|
 | VM | docker-vm | pve02(固定) | plug-exporter(Matter プラグの電力取得と ON/OFF)、bot 類、ilust、Dockge(agent) |
 | CT | n8n (ct142) | pve | n8n(ネイティブ、systemd)。監視・自動修復・通知の実行元 |
-| CT | ollama (ct146) | pve | Ollama(ネイティブ、qwen2.5:14b)。n8n の AI 診断フォールバック |
 | CT | minecraft (ct121) | pve | PaperMC + Geyser/Floodgate(Java/統合版のクロスプレイ)。Paper 本体のみ Docker(itzg イメージ) |
 | CT | vpn-lab | pve | VPN 検証 |
 
 ## スタック一覧
 
-`stacks/<ホスト>/<スタック>/` がサーバーの `/opt/stacks/<スタック>/` に対応する。CT の n8n・Ollama はネイティブ稼働のため対象外。
+`stacks/<ホスト>/<スタック>/` がサーバーの `/opt/stacks/<スタック>/` に対応する。CT の n8n はネイティブ稼働のため対象外。
 
 | ホスト | スタック | 内容 |
 |---|---|---|
@@ -210,7 +209,7 @@ flowchart LR
 | docker-vm | discord-bots | wol-bot(host network、自前イメージ) |
 | docker-vm | telegram-cmd-bot | Telegram から状態確認(`/status` `/ups` `/vms` `/containers` `/backup`)・更新操作・プラグ操作をする bot。UPS は NUT に直接問い合わせる |
 | docker-vm | ilust | ギャラリー(Node)+ いいね画像の取得(gallery-dl、30分毎) |
-| mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(軽量モデル2つを常駐。回収対策を兼ねる) |
+| mcp-a1 | mcp / mail-sync / ollama | MCP サーバー、Proton Bridge + mbsync、Ollama(7b と 3b を常駐。AI 診断の予備と回収対策を兼ねる) |
 | mcp-a1 | dockge | Docker 管理 UI(親機、Web コンソール有効)。docker-vm・minecraft-ct・raspberry-pi の Dockge を agent として1画面に集約(接続先は IP ではなくホスト名で登録し、画面上で名前が分かる) |
 | pi | npm | Nginx Proxy Manager |
 | pi | dockge | Docker 管理 UI(agent、Web コンソール有効) |
@@ -222,8 +221,8 @@ flowchart LR
 - **定足数**: pve・pve02・QDevice(Raspberry Pi)の3票。どれか1台が落ちても過半数を保つので、残った側でクラスタ操作ができる。
 - **バックアップ置き場が止まったとき**: backup-storage(NFS)は `soft` マウント。OrangePi が落ちていても pve/pve02 の操作はハングせず、その間の pve のゲストの vzdump だけが失敗として通知される。pve02 の docker-vm は OrangePi を使わない(pve のディスクにある backup-pve02 へ保存)ので、OrangePi が止まっても影響を受けない。逆に pve が落ちると docker-vm の最新の vzdump を取り出せないが、オフサイトと直前世代は残る。
 - **停電**: UPS は pve02 に USB でつなぎ、pve02 の NUT が主として監視する(pve・OrangePi・Raspberry Pi は従)。バッテリー運転が続くと pve02(5分)・pve(6分)が停止し、主がいなくなった時点で従も停止する。USB が抜けて NUT が古い値を返し続ける状態は、healthchecks.io の `ups-usb`(5分毎)で検知する。
-- **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、CT の Ollama(14b、常駐)が予備。両方ダメでも通知自体は届く。
-- **A1 のアイドル回収**: OCI の Always Free は使用率が低い状態が続くと回収されることがある(CPU・ネットワーク・メモリがすべて 20% 未満)。回収前の警告メールは公式には約束されていないため、自前で守る。A1 の軽量 Ollama(1.5b と 3b)はモデルを常駐させてメモリ使用率を 40% 前後に保つ役を兼ね、30% を下回ると `health-check` が警告する。外すなら先に Pay As You Go へ切り替える(無料枠内なら 0 円で回収の対象外になる)。
+- **AI 診断**: Gemini が主(429/503 のときは5秒間隔で3回まで再試行)、A1 の Ollama(qwen2.5:7b、常駐)が予備。両方ダメでも通知自体は届く。
+- **A1 のアイドル回収**: OCI の Always Free は使用率が低い状態が続くと回収されることがある(CPU・ネットワーク・メモリがすべて 20% 未満)。回収前の警告メールは公式には約束されていないため、自前で守る。A1 の Ollama(7b と 3b)はモデルを常駐させてメモリ使用率を高めに保つ役を兼ね、30% を下回ると `health-check` が警告する。外すなら先に Pay As You Go へ切り替える(無料枠内なら 0 円で回収の対象外になる)。
 
 ## バックアップ
 
@@ -234,7 +233,7 @@ flowchart LR
 | 03:15 | OrangePi の設定 | backup-storage |
 | 03:30 | GitHub 全リポジトリのミラー bundle 化(A1) | OrangePi 経由でオフサイト |
 | 03:30 | NAS 共有のミラー(コピー元が未マウントなら中止) | backup-storage |
-| 04:00 | pve のゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2、n8n/Ollama の CT も対象) | backup-storage |
+| 04:00 | pve のゲストの vzdump(snapshot モード、keep-daily=3、keep-weekly=2、n8n の CT も対象) | backup-storage |
 | 04:00 | pve02 のゲスト(docker-vm)の vzdump(同じ保持) | backup-pve02(pve のディスク) |
 | 05:30 | Minecraft ワールド(30日分) | pve ローカル → ミラー |
 | 06:00 | restic によるオフサイトバックアップ(daily 7・weekly 4・monthly 6) | OCI Object Storage |

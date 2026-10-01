@@ -51,9 +51,6 @@ all:
           extra_routes:  # n8n reaches A1 (mcp-a1) over Tailscale via the Raspberry Pi, the only advertised subnet router
             - dest: 100.64.0.0/10
               via: 192.168.0.13
-        ct146:
-          ansible_host: 192.168.0.24
-          ansible_user: root
     others:
       hosts:
         orangepi:

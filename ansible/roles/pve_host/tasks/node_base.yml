@@ -274,7 +274,7 @@
 
 - name: known peer host keys for cross-host ssh hops
   ansible.builtin.shell: |
-    for h in {{ [hostvars['docker-vm'].ansible_host, hostvars['ct142'].ansible_host, hostvars['ct146'].ansible_host, hostvars['pve'].ansible_host, hostvars['pve02'].ansible_host, hostvars['orangepi'].ansible_host, hostvars['pi'].ansible_host, hostvars['mcp-a1'].ansible_host] | join(' ') }}; do
+    for h in {{ [hostvars['docker-vm'].ansible_host, hostvars['ct142'].ansible_host, hostvars['pve'].ansible_host, hostvars['pve02'].ansible_host, hostvars['orangepi'].ansible_host, hostvars['pi'].ansible_host, hostvars['mcp-a1'].ansible_host] | join(' ') }}; do
       ssh-keyscan -t rsa,ed25519 -T 3 $h 2>/dev/null
     done > /tmp/khnew
     touch /root/.ssh/known_hosts
