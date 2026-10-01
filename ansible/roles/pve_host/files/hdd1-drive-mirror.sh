@@ -19,6 +19,14 @@ say(){ echo "$(date '+%F %T') $*" >> $LOG; }
 tg(){ curl -s -m15 -o /dev/null --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=$1" "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage"; }
 hc(){ [ -n "$HC" ] && curl -fsS -m 10 --retry 3 -o /dev/null "$HC$1"; }
 bump(){ local n; n=$(( $(cat "$STATE/$1" 2>/dev/null || echo 0) + 1 )); echo $n > "$STATE/$1"; echo $n; }
+evac_oldtrash(){
+  [ -d "$OLDTRASH" ] && mountpoint -q $B || return 0
+  if rclone copy "$OLDTRASH" "$TRASH" "${F[@]}" --transfers 4 --tpslimit 5 --drive-chunk-size 64M --log-file $LOG --log-level NOTICE && rclone cryptcheck "$OLDTRASH" "$TRASH" "${F[@]}" --one-way --tpslimit 10 --log-file $LOG --log-level NOTICE; then
+    rm -rf --one-file-system "$OLDTRASH" && say "UPLOADED+REMOVED $OLDTRASH"
+  else
+    say "FAIL upload $OLDTRASH (kept, retry next run)"
+  fi
+}
 
 mkdir -p $STATE; touch $LOG
 exec 9>/var/lock/hdd1-drive-mirror.lock
@@ -50,10 +58,7 @@ for d in $(rclone lsf "$TRASH" --dirs-only 2>/dev/null | tr -d /); do
 done
 
 if [ -f $STATE/retired ]; then
-  if [ -d "$OLDTRASH" ] && mountpoint -q $B; then
-    find "$OLDTRASH" -mindepth 1 -maxdepth 1 -type d -mtime +$KEEP_DAYS -exec rm -rf {} +
-    rmdir "$OLDTRASH" 2>/dev/null && say "REMOVED $OLDTRASH"
-  fi
+  evac_oldtrash
 elif [ $rc -eq 0 ] && [ "$RETIRE" = 1 ]; then
   say "VERIFY start"
   if rclone cryptcheck "$SRC" "$DST" "${F[@]}" --checkers 8 --tpslimit 10 --log-file $LOG --log-level NOTICE; then
@@ -62,7 +67,8 @@ elif [ $rc -eq 0 ] && [ "$RETIRE" = 1 ]; then
     systemctl stop hdd1-backup.service >> $LOG 2>&1
     if mountpoint -q $B && [ -d "$OLD" ]; then rm -rf --one-file-system "$OLD" && say "REMOVED $OLD"; fi
     touch $STATE/retired; echo 0 > $STATE/verifyfail
-    tg "☁️ hdd1のDriveミラーの初回同期と検証が完了。ローカルミラー(hdd1-backup)を止めて削除した。以後は毎日03:35にDriveへ同期(削除・上書きされた分は${KEEP_DAYS}日保持)"
+    evac_oldtrash
+    tg "☁️ hdd1のDriveミラーの初回同期と検証が完了。ローカルミラー(hdd1-backup)を止めて削除し、削除退避分(hdd1-backup-deleted)もDriveへ移した。以後は毎日03:35にDriveへ同期(削除・上書きされた分は${KEEP_DAYS}日保持)"
   else
     n=$(bump verifyfail); say "VERIFY failed run=$n (local mirror kept)"
     [ $n -eq 3 ] && tg "⚠️ hdd1のDriveミラーの検証が3回続けて不一致(ローカルミラーは残してある)。pveの $LOG を確認"
