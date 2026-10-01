@@ -61,7 +61,16 @@ if [ -f $STATE/retired ]; then
   evac_oldtrash
 elif [ $rc -eq 0 ] && [ "$RETIRE" = 1 ]; then
   say "VERIFY start"
-  if rclone cryptcheck "$SRC" "$DST" "${F[@]}" --checkers 8 --tpslimit 10 --log-file $LOG --log-level NOTICE; then
+  verify_full(){
+    rm -f $STATE/differ $STATE/missing
+    rclone cryptcheck "$SRC" "$DST" "${F[@]}" --one-way --checkers 8 --tpslimit 10 --differ $STATE/differ --missing-on-dst $STATE/missing --log-file $LOG --log-level NOTICE && return 0
+    cat $STATE/differ $STATE/missing 2>/dev/null | sort -u > $STATE/fix
+    [ -s $STATE/fix ] || return 1
+    say "REUPLOAD $(wc -l < $STATE/fix) files that differ or are missing"
+    rclone copy "$SRC" "$DST" "${F[@]}" --files-from $STATE/fix --ignore-times --backup-dir "$TRASH/$(date +%F)" --transfers 4 --tpslimit 5 --drive-chunk-size 64M --low-level-retries 20 --retries 3 --log-file $LOG --log-level NOTICE || return 1
+    rclone cryptcheck "$SRC" "$DST" "${F[@]}" --one-way --files-from $STATE/fix --tpslimit 10 --log-file $LOG --log-level NOTICE
+  }
+  if verify_full; then
     say "VERIFIED"
     systemctl disable --now hdd1-backup.timer >> $LOG 2>&1
     systemctl stop hdd1-backup.service >> $LOG 2>&1
