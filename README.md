@@ -1,19 +1,24 @@
-# homelab (旧構成のアーカイブ)
+# homelab
 
-> 2026-10-01 に鯖を全面的に作り直しました。現行の構成と手順は **Leucophyllous/infra**（非公開）が正本です。このリポジトリは Proxmox 時代の記録として残しています。
+2026-10-06 時点の現行構成と、運用の正本。GitHub の infra リポジトリは 2026-10-06 にアーカイブ済みで、旧構成の参照用。
 
-## 現行構成（2026-10-01 時点）
+## 現行構成
 
-| ホスト | IP | OS | 役割 |
-|---|---|---|---|
-| pve | 192.168.0.150 | Debian 13 + Docker | NUT 親、ilust・各bot、Cloudflare Tunnel(pve)、hdd1 の SMB |
-| pve02 | 192.168.0.101 | Debian 13 + Docker | NUT 子 |
-| Pi | 192.168.0.243 | Raspberry Pi OS (Debian 13) | Gatus、外部ハートビート、NUT 子 |
-| OrangePi 5 Plus | 192.168.0.183 | Armbian (Debian 13) | Samba(msdfs)、restic-server、NUT 子 |
-| A1 (OCI) | Tailscale 経由 | Ubuntu 24.04 | MCP、cloudflared(Tunnel A1)、homepage、manmaru、mail-sync |
+| ホスト | IP | 役割 |
+|---|---|---|
+| pve | 192.168.0.150 | Pterodactyl（Panel は Docker、Wings は systemd）、Minecraft Bedrock、mixerbox-api、samba-hdd1、NUT 親 |
+| OrangePi 5 Plus | 192.168.0.183 | Gatus、restic rest-server、Samba、telegram-cmd-bot、wol-bot。サブネットルート 192.168.0.0/24 を広告 |
+| A1 (OCI) | Tailscale 経由 | MCP、homepage、ilust、manmaru、Discord bot、mail-sync、Cloudflare Tunnel。削除・譲渡禁止 |
+| pve02 / Pi | .101 / .243 | 一時廃止（電源オフ） |
 
-- Proxmox、HA、ZFS レプリケーション、NPM、Dockge、docker-proxy、n8n 監視は廃止。
-- 公開は Cloudflare Tunnel + Access のみ。
-- 監視は Gatus（Pi）と Healthchecks の外部ハートビート。
+## 方針
 
-旧 README は [docs/legacy-README-20260925.md](docs/legacy-README-20260925.md) に移しました。
+- 役割を分ける: 重いサービスは pve、ローカル必須の軽いものは OrangePi、公開系は A1。
+- 管理は各ホストの Dockge（/opt/stacks）。秘密は /opt/secrets。バックアップは restic。Komodo は廃止。
+- 公開は Cloudflare Tunnel と Access（Leila only）。
+- Minecraft Bedrock は Pterodactyl 内で transport=nethernet、UDP 19132 の1本。グローバルIPが変わったら server.properties の server-udp-ports を更新する。起動時に自動アップデートする。
+- 監視は Gatus と Healthchecks。自動対応の手順は [docs/auto-heal-runbook.md](docs/auto-heal-runbook.md)。
+
+## 過去の記録
+
+旧 README は [docs/legacy-README-20260925.md](docs/legacy-README-20260925.md)。
